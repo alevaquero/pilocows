@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# PlatformIO
+handheld/.pio/
+handheld/.vscode/
+
+# Rust
+target/
+**/*.rs.bk
+
+# Node / Frontend
+node_modules/
+frontend/dist/
+frontend/src-tauri/target/
+
+# SQLite
+*.db
+*.db-shm
+*.db-wal
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/settings.json
+.idea/
