@@ -1,0 +1,21 @@
+## IDF Component Manager — pulled automatically on first build
+dependencies:
+  idf: ">=5.1.0"
+
+  # LVGL v8 (stable, wide ESP-IDF ecosystem support)
+  lvgl/lvgl:
+    version: "~8.3.0"
+    rules:
+      - if: "idf_version >=5.0.0"
+
+  # Espressif LVGL port — integrates LVGL task, flush, tick with esp_lcd
+  espressif/esp_lvgl_port:
+    version: "^1.4.0"
+
+  # ST7796 panel driver for esp_lcd (8080 interface)
+  espressif/esp_lcd_st7796:
+    version: "^1.0.0"
+
+  # FT5x06 touch driver — compatible with FT6336U
+  espressif/esp_lcd_touch_ft5x06:
+    version: "^1.0.0"
