@@ -4,6 +4,10 @@
 # PlatformIO
 handheld/.pio/
 handheld/.vscode/
+handheld/managed_components/
+handheld/dependencies.lock
+handheld/sdkconfig
+handheld/CMakeLists.txt
 
 # Rust
 target/
