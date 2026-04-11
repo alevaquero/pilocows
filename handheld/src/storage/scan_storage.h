@@ -1,7 +1,7 @@
 #pragma once
 
-#include "rfid/rfid_reader.h"
 #include <stdint.h>
+#include <stddef.h>
 #include <stdbool.h>
 
 #define SCAN_EVENT_GENERAL       "general"

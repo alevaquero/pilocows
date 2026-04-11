@@ -1,6 +1,8 @@
 #include "i18n.h"
-#include "strings_en.h"
-#include "strings_es.h"
+// Do NOT include both strings_en.h and strings_es.h here — they define the
+// same macro names causing redefinition warnings. The lookup table below uses
+// string literals directly; the macros are only used in UI source files
+// which include exactly one of the two headers (via i18n.h -> strings_en.h).
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdint.h>
+
 typedef enum {
     SCREEN_SCAN,
     SCREEN_HISTORY,

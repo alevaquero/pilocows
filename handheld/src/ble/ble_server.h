@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 // Callback invoked when the desktop sends a CONTROL command.
 typedef enum {

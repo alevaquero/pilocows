@@ -110,19 +110,19 @@ static esp_err_t lcd_init(esp_lcd_panel_io_handle_t *io_out)
     }
 
     // Create panel IO on the I80 bus
-    esp_lcd_panel_io_i80_config_t io_cfg = {
-        .cs_gpio_num      = -1,          // No CS pin on this board
-        .pclk_hz          = LCD_PCLK_HZ,
-        .trans_queue_depth = 10,
-        .dc_levels = {
-            .dc_idle_level  = 0,
-            .dc_cmd_level   = 0,
-            .dc_dummy_level = 0,
-            .dc_data_level  = 1,
-        },
-        .lcd_cmd_bits     = 8,
-        .lcd_param_bits   = 8,
-    };
+    // Field order must match struct declaration in ESP-IDF 5.4:
+    // cs_gpio_num, pclk_hz, trans_queue_depth, on_color_trans_done, user_ctx,
+    // lcd_cmd_bits, lcd_param_bits, flags, dc_levels
+    esp_lcd_panel_io_i80_config_t io_cfg = {};
+    io_cfg.cs_gpio_num       = -1;
+    io_cfg.pclk_hz           = LCD_PCLK_HZ;
+    io_cfg.trans_queue_depth = 10;
+    io_cfg.lcd_cmd_bits      = 8;
+    io_cfg.lcd_param_bits    = 8;
+    io_cfg.dc_levels.dc_idle_level  = 0;
+    io_cfg.dc_levels.dc_cmd_level   = 0;
+    io_cfg.dc_levels.dc_dummy_level = 0;
+    io_cfg.dc_levels.dc_data_level  = 1;
     err = esp_lcd_new_panel_io_i80(i80_bus, &io_cfg, io_out);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to create panel IO: %s", esp_err_to_name(err));
@@ -159,8 +159,16 @@ static esp_err_t touch_init(esp_lcd_panel_io_handle_t lcd_io)
 {
     (void)lcd_io;  // Touch uses its own I2C bus, not the LCD IO
 
+    // Avoid ESP_LCD_TOUCH_IO_I2C_FT5x06_CONFIG() macro — it uses out-of-order
+    // designated initializers that break C++ compilation with GCC on ESP-IDF 5.4.
     esp_lcd_panel_io_handle_t tp_io = NULL;
-    esp_lcd_panel_io_i2c_config_t tp_io_cfg = ESP_LCD_TOUCH_IO_I2C_FT5x06_CONFIG();
+    esp_lcd_panel_io_i2c_config_t tp_io_cfg = {};
+    tp_io_cfg.dev_addr            = ESP_LCD_TOUCH_IO_I2C_FT5x06_ADDRESS;
+    tp_io_cfg.control_phase_bytes = 1;
+    tp_io_cfg.dc_bit_offset       = 0;
+    tp_io_cfg.lcd_cmd_bits        = 8;
+    tp_io_cfg.lcd_param_bits      = 0;
+    tp_io_cfg.flags.disable_control_phase = 1;
     esp_err_t err = esp_lcd_new_panel_io_i2c(
         (esp_lcd_i2c_bus_handle_t)TOUCH_I2C_PORT,
         &tp_io_cfg,
@@ -175,7 +183,7 @@ static esp_err_t touch_init(esp_lcd_panel_io_handle_t lcd_io)
         .x_max         = LCD_H_RES,
         .y_max         = LCD_V_RES,
         .rst_gpio_num  = GPIO_NUM_NC,   // Reset already done with LCD
-        .int_gpio_num  = TOUCH_PIN_INT,
+        .int_gpio_num  = (gpio_num_t)TOUCH_PIN_INT,
         .levels = {
             .reset     = 0,
             .interrupt = 0,

@@ -52,7 +52,7 @@ void screen_settings_create(void)
     lv_label_set_text(lbl_title, i18n_t(STR_SETTINGS_TITLE));
     lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, 0, 10);
     lv_obj_set_style_text_color(lbl_title, lv_color_hex(0xeeeeee), LV_PART_MAIN);
-    lv_obj_set_style_text_font(lbl_title, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(lbl_title, &lv_font_montserrat_14, LV_PART_MAIN);
 
     // Back button
     lv_obj_t *btn_back = lv_btn_create(s_screen);

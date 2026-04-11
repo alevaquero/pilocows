@@ -1,6 +1,7 @@
 #include "screen_scan.h"
 #include "i18n/i18n.h"
 #include "i18n/strings_en.h"
+#include "storage/scan_storage.h"
 #include "lvgl.h"
 #include <stdio.h>
 #include <string.h>
@@ -110,7 +111,7 @@ void screen_scan_create(void)
     lv_label_set_text(s_lbl_eid, "EID: ---");
     lv_obj_align(s_lbl_eid, LV_ALIGN_BOTTOM_LEFT, 10, -10);
     lv_obj_set_style_text_color(s_lbl_eid, lv_color_hex(0xe94560), LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_lbl_eid, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_eid, &lv_font_montserrat_14, LV_PART_MAIN);
 
     // Scan button
     s_btn_scan = lv_btn_create(s_screen);
