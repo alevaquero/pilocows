@@ -237,3 +237,78 @@ Full spec: [`docs/ble-protocol.md`](docs/ble-protocol.md)
 2. **Start the frontend** — `cd frontend && npm run dev` (or `npm run tauri dev` for the full app)
 3. **Flash the handheld** — `cd handheld && pio run -e sc01plus -t upload`
 4. Use the frontend's **Sync** tab to connect to the handheld over BLE and import scan sessions.
+
+---
+
+## Build pipeline (Makefile)
+
+A root-level `Makefile` covers building, flashing, versioning, and releasing all three sub-projects.
+
+### Prerequisites
+
+- [PlatformIO CLI](https://docs.platformio.org/en/latest/core/installation/) — for handheld builds
+- [Rust](https://rustup.rs/) — for backend builds
+- [Node.js](https://nodejs.org/) 18+ — for frontend builds
+- [gh CLI](https://cli.github.com/) authenticated — for release targets
+
+### Common targets
+
+```bash
+# Show current versions for all sub-projects
+make versions
+
+# Build
+make build-handheld        # compiles ESP32-S3 firmware
+make build-backend         # cargo build --release
+make build-frontend        # tauri build
+make build-all             # all three
+
+# Build + flash handheld over USB
+make flash
+```
+
+### Releasing
+
+Each sub-project is released independently under its own tag (`handheld-vX.Y.Z`, `backend-vX.Y.Z`, `frontend-vX.Y.Z`).
+
+```bash
+# Handheld — builds locally and uploads firmware to a new GitHub release
+make release-handheld
+
+# Backend — pushes the git tag; GitHub Actions builds for macOS arm64,
+#            macOS x86_64, and Windows x86_64 and attaches binaries
+make release-backend
+
+# Frontend — pushes the git tag; GitHub Actions builds a macOS universal
+#             .dmg and a Windows .msi + .exe via tauri-apps/tauri-action
+make release-frontend
+```
+
+### Typical release flow
+
+```bash
+# 1. Bump the version(s) you changed
+make bump-backend V=0.2.0
+
+# 2. Commit and push
+git add backend/Cargo.toml
+git commit -m "Bump backend to 0.2.0"
+git push
+
+# 3. Tag and trigger the release
+make release-backend
+#    → pushes tag backend-v0.2.0
+#    → GitHub Actions builds all platforms and publishes the release
+```
+
+You can bump multiple sub-projects in the same commit if they ship together:
+
+```bash
+make bump-backend  V=0.2.0
+make bump-frontend V=0.2.0
+git add backend/Cargo.toml frontend/package.json frontend/src-tauri/tauri.conf.json
+git commit -m "Bump backend and frontend to 0.2.0"
+git push
+make release-backend
+make release-frontend
+```
