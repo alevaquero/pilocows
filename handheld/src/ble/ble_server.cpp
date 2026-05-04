@@ -61,7 +61,7 @@ static uint32_t                s_data_offset          = 0; // set by CONTROL "da
 #define SESSION_DATA_PAGE_SIZE  5   // records per page  — 5×~120 bytes = ~600 bytes, safely under 765
 
 // Status JSON (updated by ble_server_update_status)
-static char s_status_json[128] = "{\"scan_count\":0,\"firmware_version\":\"0.1.0\"}";
+static char s_status_json[128] = "{\"scan_count\":0,\"firmware_version\":\"" FIRMWARE_VERSION "\"}";
 
 // ---------------------------------------------------------------------------
 // JSON builder helpers

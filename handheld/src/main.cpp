@@ -23,7 +23,7 @@
 #include <time.h>
 
 static const char *TAG          = "main";
-static const char *FIRMWARE_VER = "0.1.0";
+static const char *FIRMWARE_VER = FIRMWARE_VERSION;  // injected by version_flag.py from handheld/VERSION
 
 // Queue for passing RFID events from the RFID task to the main task.
 static QueueHandle_t s_scan_queue = NULL;

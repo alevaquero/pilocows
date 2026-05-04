@@ -5,7 +5,7 @@ Animal traceability system for Pilo's farm. Tracks cattle via ISO 11784/85 RFID 
 ## Architecture
 
 ```
-┌─────────────────┐        BLE (GATT)        ┌──────────────────────────┐
+┌─────────────────┐        BLE (GATT)         ┌──────────────────────────┐
 │   Handheld      │ ◄───────────────────────► │   Frontend (Tauri+React) │
 │   ESP32-S3      │    scan list + events     │   macOS / Windows        │
 │                 │                           │                          │
