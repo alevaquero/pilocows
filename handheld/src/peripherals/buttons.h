@@ -4,8 +4,6 @@
 
 typedef enum {
     BTN_SCAN = 0,
-    BTN_UP,
-    BTN_DOWN,
     BTN_COUNT,
 } button_id_t;
 

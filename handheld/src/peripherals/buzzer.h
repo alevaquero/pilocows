@@ -1,10 +1,14 @@
 #pragma once
 
-// Buzzer via onboard I2S audio amplifier.
-// TODO: Wire speaker to SPK+/SPK- connector, then uncomment AUDIO_ENABLED
-//       in board_config.h and implement these functions.
+// Buzzer — simple GPIO low-level-trigger on BUZZER_PIN (GPIO 11, EXT_IO2).
+// Enabled via BUZZER_ENABLED in board_config.h.
 
 void buzzer_init(void);
-void buzzer_beep(void);    // Short confirmation beep
-void buzzer_error(void);   // Error tone pattern
+
+// Long single beep (~400ms) — call on successful new scan (green flash).
+void buzzer_success(void);
+
+// Two short beeps (~120ms on, 120ms gap, 120ms on) — call on duplicate (red flash).
+void buzzer_duplicate(void);
+
 void buzzer_set_enabled(bool enabled);

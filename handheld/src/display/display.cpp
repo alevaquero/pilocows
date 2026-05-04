@@ -123,6 +123,7 @@ static esp_err_t lcd_init(esp_lcd_panel_io_handle_t *io_out)
     io_cfg.dc_levels.dc_cmd_level   = 0;
     io_cfg.dc_levels.dc_dummy_level = 0;
     io_cfg.dc_levels.dc_data_level  = 1;
+    io_cfg.flags.swap_color_bytes   = 1;  // TODO: color mapping under investigation — see color test screen.
     err = esp_lcd_new_panel_io_i80(i80_bus, &io_cfg, io_out);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to create panel IO: %s", esp_err_to_name(err));
@@ -132,7 +133,7 @@ static esp_err_t lcd_init(esp_lcd_panel_io_handle_t *io_out)
     // Create ST7796 panel
     esp_lcd_panel_dev_config_t panel_cfg = {
         .reset_gpio_num   = -1,          // Reset already done manually above
-        .rgb_ele_order    = LCD_RGB_ELEMENT_ORDER_RGB,
+        .rgb_ele_order    = LCD_RGB_ELEMENT_ORDER_BGR, // SC01 Plus: MADCTL BGR=1; LVGL sends RGB so driver must swap
         .bits_per_pixel   = LCD_BITS_PER_PIXEL,
     };
     err = esp_lcd_new_panel_st7796(*io_out, &panel_cfg, &s_panel);
@@ -146,7 +147,10 @@ static esp_err_t lcd_init(esp_lcd_panel_io_handle_t *io_out)
 
     // SC01 Plus: landscape orientation, origin top-left
     esp_lcd_panel_swap_xy(s_panel, true);
-    esp_lcd_panel_mirror(s_panel, true, false);
+    esp_lcd_panel_mirror(s_panel, false, false);
+    // SC01 Plus uses an IPS panel: native pixel polarity is inverted, so INVON
+    // is required to get correct colors. Without it every color appears as NOT(intended).
+    esp_lcd_panel_invert_color(s_panel, true);
     esp_lcd_panel_disp_on_off(s_panel, true);
 
     return ESP_OK;
@@ -179,9 +183,14 @@ static esp_err_t touch_init(esp_lcd_panel_io_handle_t lcd_io)
         return err;
     }
 
+    // FT6336U on SC01 Plus reports portrait coords: x_raw [0,320], y_raw [0,480].
+    // Transform order in esp_lcd_touch: mirror_x → mirror_y → swap_xy.
+    // We need: x_out = y_raw [0,480], y_out = (320 - x_raw) [0,320].
+    // Before swap: x_pre = (320 - x_raw) via mirror_x(x_max=320), y_pre = y_raw (no mirror).
+    // After swap:  x_out = y_pre = y_raw, y_out = x_pre = 320 - x_raw. ✓
     esp_lcd_touch_config_t tp_cfg = {
-        .x_max         = LCD_H_RES,
-        .y_max         = LCD_V_RES,
+        .x_max         = LCD_V_RES,     // IC portrait x range (320); used by mirror_x
+        .y_max         = LCD_H_RES,     // IC portrait y range (480); unused (mirror_y=0)
         .rst_gpio_num  = GPIO_NUM_NC,   // Reset already done with LCD
         .int_gpio_num  = (gpio_num_t)TOUCH_PIN_INT,
         .levels = {
@@ -189,7 +198,7 @@ static esp_err_t touch_init(esp_lcd_panel_io_handle_t lcd_io)
             .interrupt = 0,
         },
         .flags = {
-            .swap_xy   = 1,   // Match LCD orientation
+            .swap_xy   = 1,
             .mirror_x  = 1,
             .mirror_y  = 0,
         },
@@ -214,7 +223,7 @@ static esp_err_t lvgl_init(esp_lcd_panel_io_handle_t lcd_io)
     const lvgl_port_display_cfg_t disp_cfg = {
         .io_handle     = lcd_io,
         .panel_handle  = s_panel,
-        .buffer_size   = LCD_H_RES * 40,  // 40-line draw buffer (~37KB)
+        .buffer_size   = LCD_H_RES * 20,  // 20-line draw buffer (~19KB) — save internal DMA RAM
         .double_buffer = true,
         .hres          = LCD_H_RES,
         .vres          = LCD_V_RES,

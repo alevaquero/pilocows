@@ -1,0 +1,20 @@
+[package]
+name = "pilocows-app"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "pilocows_app"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri      = { version = "2", features = [] }
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+btleplug   = "0.11"
+uuid       = { version = "1", features = ["v4"] }
+tokio      = { version = "1", features = ["time"] }
+chrono     = "0.4"

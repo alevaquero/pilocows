@@ -1,0 +1,76 @@
+pub mod animals;
+pub mod health;
+pub mod removal;
+pub mod sync;
+pub mod tags;
+
+use axum::{
+    routing::{get, patch, post},
+    Router,
+};
+use sqlx::SqlitePool;
+
+pub fn router(pool: SqlitePool) -> Router {
+    Router::new()
+        // Tags
+        .route("/api/v1/tags", get(tags::list_tags).post(tags::create_tag))
+        .route("/api/v1/tags/:tag_number", get(tags::get_tag_by_number))
+        // Animals
+        .route(
+            "/api/v1/animals",
+            get(animals::list_animals).post(animals::create_animal),
+        )
+        .route(
+            "/api/v1/animals/:id",
+            get(animals::get_animal).patch(animals::patch_animal),
+        )
+        // Vaccinations
+        .route(
+            "/api/v1/animals/:animal_id/vaccinations",
+            get(health::list_vaccinations).post(health::create_vaccination),
+        )
+        .route(
+            "/api/v1/animals/:animal_id/vaccinations/:id",
+            patch(health::patch_vaccination).delete(health::delete_vaccination),
+        )
+        // Pregnancies
+        .route(
+            "/api/v1/animals/:animal_id/pregnancies",
+            get(health::list_pregnancies).post(health::create_pregnancy),
+        )
+        .route(
+            "/api/v1/animals/:animal_id/pregnancies/:id",
+            patch(health::patch_pregnancy).delete(health::delete_pregnancy),
+        )
+        // TB Tests
+        .route(
+            "/api/v1/animals/:animal_id/tb-tests",
+            get(health::list_tb_tests).post(health::create_tb_test),
+        )
+        .route(
+            "/api/v1/animals/:animal_id/tb-tests/:id",
+            patch(health::patch_tb_test).delete(health::delete_tb_test),
+        )
+        // Weights
+        .route(
+            "/api/v1/animals/:animal_id/weights",
+            get(health::list_weights).post(health::create_weight),
+        )
+        .route(
+            "/api/v1/animals/:animal_id/weights/:id",
+            patch(health::patch_weight).delete(health::delete_weight),
+        )
+        // Removal
+        .route(
+            "/api/v1/animals/:animal_id/removal",
+            post(removal::create_removal)
+                .patch(removal::patch_removal)
+                .delete(removal::delete_removal),
+        )
+        // Sync
+        .route(
+            "/api/v1/sync/scans",
+            post(sync::sync_scans).get(sync::list_scan_events),
+        )
+        .with_state(pool)
+}

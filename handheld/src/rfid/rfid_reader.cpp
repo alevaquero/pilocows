@@ -6,104 +6,156 @@
 #include "freertos/task.h"
 #include <string.h>
 #include <stdlib.h>
-#include <ctype.h>
+#include <stdio.h>
 
 static const char *TAG = "rfid";
 
 // ---------------------------------------------------------------------------
-// Protocol notes for the 134.2K AGV FDX-B ISO11784/85 UART reader module
+// WL-134 packet format (30 bytes total, 9600 baud, 8N1)
 //
-// The module outputs a packet when a tag enters range (auto-send mode).
-// Common packet format (10 bytes binary + framing):
-//   D6 00 75 [10 bytes EID little-endian] [1 byte checksum]
+//  [0]     0x02  STX
+//  [1..10] 10 ASCII hex chars — animal ID, LSB-first (5 bytes / 40 bits raw)
+//  [11..14] 4 ASCII hex chars — country code, LSB-first (2 bytes / 10 bits)
+//  [15]    ASCII '0'/'1' — data flag
+//  [16]    ASCII '0'/'1' — animal flag
+//  [17..20] 4 ASCII hex chars — reserved0
+//  [21..26] 6 ASCII hex chars — reserved1
+//  [27]    XOR checksum of bytes [1..26]
+//  [28]    ~checksum (one's complement of byte 27)
+//  [29]    0x03  ETX
 //
-// The EID is a 64-bit value stored in bytes 3–10 (little-endian).
-// We extract it and format as a 15-digit decimal string.
-//
-// NOTE: Adjust RFID_PACKET_HEADER and parsing below if your module's
-// datasheet specifies a different frame format.
+// Final tag string: sprintf("%03d%012lld", country, animal_id)
+// Example: country=900, id=158002044774 → "900158002044774"
 // ---------------------------------------------------------------------------
 
-#define RFID_BUF_SIZE        128
-#define RFID_PACKET_HEADER   0xD6
-#define RFID_PACKET_LEN      13   // Header(1) + len(1) + cmd(1) + EID(8) + country(2) + crc(1) — adjust as needed
-#define RFID_TASK_STACK      4096
-#define RFID_TASK_PRIO       5
+#define RFID_PACKET_SIZE      30
+#define RFID_PACKET_STX       0x02
+#define RFID_PACKET_ETX       0x03
+
+#define RFID_OFF_ID           1
+#define RFID_OFF_COUNTRY      11
+#define RFID_OFF_DATA_FLAG    15
+#define RFID_OFF_ANIMAL_FLAG  16
+#define RFID_OFF_CHECKSUM     27
+#define RFID_OFF_CHK_INV      28
+#define RFID_OFF_ETX          29
+
+#define RFID_BUF_SIZE         128
+#define RFID_TASK_STACK       4096
+#define RFID_TASK_PRIO        5
 
 static rfid_tag_callback_t s_callback = NULL;
 static TaskHandle_t        s_task     = NULL;
-static bool                s_enabled  = true;
 
-// Parse raw 8-byte FDX-B EID (little-endian) into a 15-digit decimal string.
-// FDX-B: 38 bits individual number + 10 bits country code + 16 reserved bits.
-static void parse_fdxb(const uint8_t *raw8, rfid_tag_t *tag_out)
+// ---------------------------------------------------------------------------
+// Decode an ASCII hex string stored LSB-first into a uint64.
+// e.g. "66FD7A9C42" (10 chars) → read right-to-left as nibbles → 0x24C9A7DF66
+// ---------------------------------------------------------------------------
+static uint64_t hex_lsb_ascii_to_uint64(const uint8_t *text, uint8_t len)
 {
-    // Reconstruct 64-bit value (little-endian)
-    uint64_t raw64 = 0;
-    for (int i = 7; i >= 0; i--) {
-        raw64 = (raw64 << 8) | raw8[i];
-    }
-    // FDX-B bit layout (LSB first in the air, but we have MSB-first after reorder):
-    // bits 0–37:  individual number (38 bits)
-    // bits 38–47: country code (10 bits)
-    // We display the full 64-bit numeric value as a 15-digit string
-    snprintf(tag_out->eid, sizeof(tag_out->eid), "%015llu", (unsigned long long)raw64);
+    uint64_t value = 0;
+    uint8_t i = len;
+    do {
+        i--;
+        uint8_t nibble = text[i];
+        nibble = (nibble >= 'A') ? (nibble - 'A' + 10) : (nibble - '0');
+        value = (value << 4) + nibble;
+    } while (i != 0);
+    return value;
 }
 
-// Verify simple XOR checksum (adjust if module uses a different scheme)
-static bool verify_checksum(const uint8_t *buf, int len)
+// ---------------------------------------------------------------------------
+// Parse one complete 30-byte WL-134 packet into an EID string.
+// Returns true on success.
+// ---------------------------------------------------------------------------
+static bool parse_packet(const uint8_t *pkt, rfid_tag_t *tag_out)
 {
-    uint8_t crc = 0;
-    for (int i = 0; i < len - 1; i++) {
-        crc ^= buf[i];
+    if (pkt[0] != RFID_PACKET_STX || pkt[RFID_OFF_ETX] != RFID_PACKET_ETX) {
+        ESP_LOGW(TAG, "Bad framing: STX=%02X ETX=%02X", pkt[0], pkt[RFID_OFF_ETX]);
+        return false;
     }
-    return crc == buf[len - 1];
+
+    // Verify XOR checksum over bytes [1..26]
+    uint8_t checksum = 0;
+    for (int i = RFID_OFF_ID; i < RFID_OFF_CHECKSUM; i++) {
+        checksum ^= pkt[i];
+    }
+    if (checksum != pkt[RFID_OFF_CHECKSUM]) {
+        ESP_LOGW(TAG, "Checksum mismatch: calc=%02X pkt=%02X", checksum, pkt[RFID_OFF_CHECKSUM]);
+        return false;
+    }
+    if ((uint8_t)(~checksum) != pkt[RFID_OFF_CHK_INV]) {
+        ESP_LOGW(TAG, "Inverted checksum mismatch: ~calc=%02X pkt=%02X",
+                 (uint8_t)(~checksum), pkt[RFID_OFF_CHK_INV]);
+        return false;
+    }
+
+    uint64_t animal_id = hex_lsb_ascii_to_uint64(&pkt[RFID_OFF_ID],      10);
+    uint64_t country   = hex_lsb_ascii_to_uint64(&pkt[RFID_OFF_COUNTRY],   4);
+    bool     is_data   = pkt[RFID_OFF_DATA_FLAG]   == '1';
+    bool     is_animal = pkt[RFID_OFF_ANIMAL_FLAG]  == '1';
+
+    ESP_LOGI(TAG, "animal_id=%012llu  country=%03llu  data=%d  animal=%d",
+             (unsigned long long)animal_id, (unsigned long long)country,
+             is_data, is_animal);
+
+    snprintf(tag_out->eid, sizeof(tag_out->eid), "%03llu%012llu",
+             (unsigned long long)country, (unsigned long long)animal_id);
+
+    return true;
 }
 
+// ---------------------------------------------------------------------------
+// RFID reader task — runs continuously, decodes packets as they arrive
+// ---------------------------------------------------------------------------
 static void rfid_task(void *arg)
 {
     uint8_t buf[RFID_BUF_SIZE];
+    int     stored = 0;   // bytes accumulated in buf waiting for a full packet
 
     while (true) {
-        if (!s_enabled) {
-            vTaskDelay(pdMS_TO_TICKS(100));
-            continue;
-        }
+        int n = uart_read_bytes(RFID_UART_PORT, buf + stored,
+                                sizeof(buf) - stored - 1,
+                                pdMS_TO_TICKS(200));
+        if (n <= 0) continue;
 
-        int len = uart_read_bytes(RFID_UART_PORT, buf, sizeof(buf) - 1,
-                                  pdMS_TO_TICKS(200));
-        if (len <= 0) continue;
+        stored += n;
 
-        // Scan buffer for packet header
-        for (int i = 0; i < len; i++) {
-            if (buf[i] != RFID_PACKET_HEADER) continue;
-            if (i + RFID_PACKET_LEN > len) break;  // Incomplete packet
-
-            const uint8_t *pkt = &buf[i];
-            if (!verify_checksum(pkt, RFID_PACKET_LEN)) {
-                ESP_LOGW(TAG, "Checksum mismatch — skipping packet");
+        // Scan accumulated buffer for complete packets
+        int consumed = 0;
+        while (stored - consumed >= RFID_PACKET_SIZE) {
+            // Find STX
+            if (buf[consumed] != RFID_PACKET_STX) {
+                ESP_LOGW(TAG, "Skipping non-STX byte: %02X", buf[consumed]);
+                consumed++;
                 continue;
             }
 
-            // EID bytes start at offset 3 (after header, length, command bytes)
+            const uint8_t *pkt = &buf[consumed];
             rfid_tag_t tag;
-            parse_fdxb(&pkt[3], &tag);
-
-            ESP_LOGI(TAG, "Tag: %s", tag.eid);
-
-            if (s_callback) {
-                s_callback(&tag);
+            if (parse_packet(pkt, &tag)) {
+                ESP_LOGI(TAG, "Tag: %s", tag.eid);
+                if (s_callback) s_callback(&tag);
             }
+            consumed += RFID_PACKET_SIZE;
+        }
 
-            i += RFID_PACKET_LEN - 1;  // Advance past this packet
+        // Shift leftover bytes to the front of the buffer
+        if (consumed > 0) {
+            stored -= consumed;
+            if (stored > 0) memmove(buf, buf + consumed, stored);
         }
     }
 }
 
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 void rfid_init(rfid_tag_callback_t on_tag_read)
 {
     s_callback = on_tag_read;
 
+    // ESP-IDF UART init order: param_config → set_pin → driver_install
     uart_config_t uart_cfg = {
         .baud_rate  = RFID_BAUD_RATE,
         .data_bits  = UART_DATA_8_BITS,
@@ -111,14 +163,14 @@ void rfid_init(rfid_tag_callback_t on_tag_read)
         .stop_bits  = UART_STOP_BITS_1,
         .flow_ctrl  = UART_HW_FLOWCTRL_DISABLE,
     };
-    uart_driver_install(RFID_UART_PORT, RFID_BUF_SIZE * 2, 0, 0, NULL, 0);
     uart_param_config(RFID_UART_PORT, &uart_cfg);
-    uart_set_pin(RFID_UART_PORT, RFID_PIN_TX, RFID_PIN_RX,
+    uart_set_pin(RFID_UART_PORT, UART_PIN_NO_CHANGE, RFID_PIN_RX,
                  UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    uart_driver_install(RFID_UART_PORT, RFID_BUF_SIZE * 2, 0, 0, NULL, 0);
 
     xTaskCreate(rfid_task, "rfid", RFID_TASK_STACK, NULL, RFID_TASK_PRIO, &s_task);
-    ESP_LOGI(TAG, "RFID reader ready on UART%d (RX=%d TX=%d @ %d baud)",
-             RFID_UART_PORT, RFID_PIN_RX, RFID_PIN_TX, RFID_BAUD_RATE);
+    ESP_LOGI(TAG, "RFID reader ready — UART%d RX=GPIO%d @ %d baud",
+             RFID_UART_PORT, RFID_PIN_RX, RFID_BAUD_RATE);
 }
 
 void rfid_deinit(void)
@@ -132,5 +184,5 @@ void rfid_deinit(void)
 
 void rfid_set_scanning(bool enabled)
 {
-    s_enabled = enabled;
+    (void)enabled;  // WL-134 scans continuously; no enable/disable command
 }

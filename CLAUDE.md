@@ -171,8 +171,16 @@ Use separate Claude Code agents (subagents) for each sub-project to avoid contex
 ### C++ (handheld)
 - ESP-IDF coding style (snake_case, `TAG` for log tags)
 - One `.cpp`/`.h` pair per module, placed in its named subdirectory
-- All UI strings go through `i18n/strings.h` — never hardcode visible text
 - Pin definitions centralized in `include/board_config.h`
+
+#### i18n rules (handheld UI) — strictly enforced
+- **Every** user-visible string must go through `i18n_t(STR_...)`. Never hardcode visible text, not even in modal popups or helper functions.
+- Adding a new string requires changes to **three** files — miss any one and the string stays English:
+  1. `strings_en.h` — add `#define STR_FOO "English text"`
+  2. `strings_es.h` — add `#define STR_FOO "Texto en español"`
+  3. `i18n.cpp` — add `{ "English text", "Texto en español" }` to `s_table[]`
+- Every `lv_label_set_text` target that contains a translatable string must have its `lv_obj_t*` stored as a file-level static so it can be refreshed in that screen's `refresh_language()` function.
+- `refresh_language()` must cover **all** labels on the screen, including those inside dynamically created widgets (buttons, dropdowns, etc.).
 
 ### Rust (backend + Tauri)
 - `snake_case` everywhere

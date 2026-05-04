@@ -7,6 +7,7 @@ handheld/.vscode/
 handheld/managed_components/
 handheld/dependencies.lock
 handheld/sdkconfig
+handheld/sdkconfig.sc01plus
 handheld/CMakeLists.txt
 
 # Rust
@@ -30,3 +31,6 @@ frontend/src-tauri/target/
 # IDE
 .vscode/settings.json
 .idea/
+
+# Claude Code
+.claude/

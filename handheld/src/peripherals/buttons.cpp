@@ -12,8 +12,6 @@ static const char *TAG = "buttons";
 
 static const gpio_num_t BTN_PINS[BTN_COUNT] = {
     (gpio_num_t)BTN_PIN_SCAN,
-    (gpio_num_t)BTN_PIN_UP,
-    (gpio_num_t)BTN_PIN_DOWN,
 };
 
 static button_callback_t s_callback = NULL;
@@ -77,8 +75,7 @@ void buttons_init(button_callback_t on_event)
     }
 
     xTaskCreate(buttons_task, "buttons", 2048, NULL, 4, NULL);
-    ESP_LOGI(TAG, "Buttons ready (SCAN=%d, UP=%d, DOWN=%d)",
-             BTN_PIN_SCAN, BTN_PIN_UP, BTN_PIN_DOWN);
+    ESP_LOGI(TAG, "Buttons ready (SCAN=%d)", BTN_PIN_SCAN);
 }
 
 void buttons_poll(void)

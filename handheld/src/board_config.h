@@ -69,21 +69,30 @@
 // Extended IO Header — our custom peripherals
 // -----------------------------------------------------------------------------
 
-// RFID reader module — UART1
+// RFID reader module — UART1, RX only (module is one-way)
 #define RFID_PIN_RX         10   // EXT_IO1 — receive from RFID module
-#define RFID_PIN_TX         11   // EXT_IO2 — send to RFID module
 #define RFID_UART_PORT      UART_NUM_1
 #define RFID_BAUD_RATE       9600
 
+// Buzzer — simple GPIO, low-level trigger (active LOW = beep ON)
+// Reuses EXT_IO2 (GPIO 11); RFID TX is unused so this pin is free.
+#define BUZZER_PIN          11   // EXT_IO2
+#define BUZZER_ENABLED
+
 // Mechanical buttons (active low, internal pull-up)
 #define BTN_PIN_SCAN        12   // EXT_IO3 — dedicated scan button
-#define BTN_PIN_UP          13   // EXT_IO4 — navigate up / back
-#define BTN_PIN_DOWN        14   // EXT_IO5 — navigate down / confirm
+// EXT_IO4 (GPIO 13) and EXT_IO5 (GPIO 14) repurposed for DS3231 RTC I2C below
 
-// Vibrator motor — NOT YET WIRED
-// TODO: Connect vibrator motor driver to EXT_IO6
-#define VIBRATOR_PIN        21   // EXT_IO6
-// #define VIBRATOR_ENABLED        // Uncomment when motor is wired
+// Vibrator motor — GPIO 21 (EXT_IO6)
+#define VIBRATOR_PIN        21
+#define VIBRATOR_ENABLED
+
+// DS3231 RTC — dedicated I2C bus on I2C_NUM_1
+// EXT_IO4 / EXT_IO5 reused (UP/DOWN buttons removed to free these pins)
+#define RTC_SDA_PIN         13   // EXT_IO4
+#define RTC_SCL_PIN         14   // EXT_IO5
+#define RTC_I2C_PORT        I2C_NUM_1
+#define RTC_I2C_FREQ_HZ     400000
 
 // -----------------------------------------------------------------------------
 // Miscellaneous

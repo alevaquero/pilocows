@@ -32,26 +32,111 @@
 #define STR_HISTORY_EMPTY       "No scans yet"
 #define STR_HISTORY_TITLE       "Scan History"
 
+// Date & time field labels (modal spinboxes)
+#define STR_DATETIME_YEAR       "Year"
+#define STR_DATETIME_MONTH      "Mon"
+#define STR_DATETIME_DAY        "Day"
+#define STR_DATETIME_HOUR       "Hour"
+#define STR_DATETIME_MIN        "Min"
+
 // Settings screen
 #define STR_SETTINGS_TITLE      "Settings"
 #define STR_SETTINGS_LANGUAGE   "Language"
 #define STR_SETTINGS_BUZZER     "Buzzer"
 #define STR_SETTINGS_VIBRATOR   "Vibrator"
 #define STR_SETTINGS_BRIGHTNESS "Brightness"
+#define STR_SETTINGS_DATETIME   "Date & Time"
+#define STR_SETTINGS_SET_TIME   "Set Time"
 #define STR_SETTINGS_ABOUT      "About"
 #define STR_SETTINGS_VERSION    "Version"
 #define STR_SETTINGS_SAVE       "Save"
 
-// BLE
+// WiFi
+#define STR_SETTINGS_WIFI       "WiFi"
+#define STR_WIFI_NETWORK        "Network"
+#define STR_WIFI_PASSWORD       "Password"
+#define STR_WIFI_CONNECT        "Connect"
+#define STR_WIFI_CONFIGURE      "Configure"
+#define STR_WIFI_RESCAN         "Rescan"
+#define STR_WIFI_CONNECTED      "Connected"
+#define STR_WIFI_DISCONNECTED   "Disconnected"
+#define STR_WIFI_SEARCHING      "Searching..."
+#define STR_WIFI_NO_NETWORKS    "(none found)"
+#define STR_WIFI_WRONG_PASS     "Wrong password"
+#define STR_WIFI_CONNECTING     "Connecting..."
+
+// BLE / Sync
+#define STR_SETTINGS_SYNC       "Sync to PC"
+#define STR_BLE_SYNCED          "Synced"
 #define STR_BLE_ADVERTISING     "Waiting for PC..."
 #define STR_BLE_CONNECTED       "PC connected"
 #define STR_BLE_SYNCING         "Syncing..."
 #define STR_BLE_SYNC_DONE       "Sync complete"
 #define STR_BLE_SYNC_FAILED     "Sync failed"
 
+// Sessions — menu / list
+#define STR_SESSION_TITLE           "Sessions"
+#define STR_SESSION_NEW             "New Session"
+#define STR_SESSION_RESUME          "Resume Session"
+#define STR_SESSION_LIST            "Session List"
+#define STR_SESSION_NONE            "No active session"
+#define STR_SESSION_ACTIVE          "Active:"
+#define STR_SESSION_ANIMALS         "Animals:"
+#define STR_SESSION_CLOSE           "Close Session"
+#define STR_SESSION_REOPEN          "Reopen"
+#define STR_SESSION_DELETE          "Delete"
+#define STR_SESSION_SET_CURRENT     "Set as Current"
+#define STR_SESSION_OPEN            "Open"
+#define STR_SESSION_CLOSED          "Closed"
+#define STR_SESSION_CONFIRM_DELETE  "Delete this session?"
+#define STR_SESSION_CONFIRM_CLOSE   "Close this session?"
+
+// Sessions — create
+#define STR_SESSION_TYPE            "Type"
+#define STR_SESSION_NAME            "Name"
+#define STR_SESSION_SELECT_VAX      "Vaccines"
+#define STR_SESSION_CREATE          "Create"
+
+// Scan screen — session-aware
+#define STR_SCAN_NO_SESSION         "No active session"
+#define STR_SCAN_START_SESSION      "Start a session first"
+#define STR_SCAN_DUPLICATE          "Already scanned"
+#define STR_SCAN_NEW_TAG            "New animal"
+#define STR_SCAN_SESSION            "Session:"
+
+// Weighing
+#define STR_WEIGHT_KG               "Weight (kg)"
+#define STR_WEIGHT_LABEL            "Weight:"
+
+// Pregnancy
+#define STR_PREG_RESULT             "Pregnancy"
+#define STR_PREG_UNKNOWN            "Unknown"
+#define STR_PREG_YES                "Pregnant"
+#define STR_PREG_NO                 "Not pregnant"
+
+// TB Test
+#define STR_TB_RESULT               "TB Test"
+#define STR_TB_POSITIVE             "Positive"
+#define STR_TB_NEGATIVE             "Negative"
+#define STR_TB_INCONCLUSIVE         "Inconclusive"
+
+// Notes
+#define STR_NOTE                    "Note"
+#define STR_NOTE_PLACEHOLDER        "Add note..."
+
+// Vaccines settings
+#define STR_SETTINGS_VACCINES       "Vaccines"
+#define STR_VACCINES_TITLE          "Vaccines"
+#define STR_VACCINE_ADD             "Add Vaccine"
+#define STR_VACCINE_NAME            "Vaccine Name"
+#define STR_VACCINE_DELETE          "Delete"
+#define STR_VACCINE_NONE            "No vaccines configured"
+#define STR_VACCINE_CONFIRM_DELETE  "Delete this vaccine?"
+
 // Common
 #define STR_BTN_OK              "OK"
 #define STR_BTN_CANCEL          "Cancel"
+#define STR_BTN_CLOSE           "Close"
 #define STR_BTN_BACK            "Back"
 #define STR_BTN_CONFIRM         "Confirm"
 #define STR_ON                  "On"
