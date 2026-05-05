@@ -12,10 +12,13 @@
 // ── Layout constants ──────────────────────────────────────────────────────────
 // 480 × 320 landscape
 //
-//  y=  0, h=40  Header (← back | session name + clock | ⚙ settings)
-//  y= 40, h=22  Session info bar (type · count · status)
-//  y= 70, h=44  EID row (tag value left | status badge centre | count right)
-//  y=114, h=156 Data panel  (type-specific widgets)
+//  y=  0, h=60  Header — 2 rows, back button spans full height
+//               row 1 (h=30): session name centred
+//               row 2 (h=30): clock left | tag count right
+//  y= 60, h=58  EID area — 2 centred rows
+//               row 1 (h=30): EID value (montserrat_26)
+//               row 2 (h=28): status badge (new animal / already scanned / ready)
+//  y=118, h=152 Data panel  (type-specific widgets)
 //  y=270, h=50  Note textarea  (montserrat_20 needs ≥50px to avoid vertical scroll)
 //
 //  Flash overlay: full 480×320, z-order top, hidden by default.
@@ -36,18 +39,13 @@ static tb_result_t     s_tb           = TB_INCONCLUSIVE;
 static lv_obj_t *s_scr = NULL;
 
 // ── Header ────────────────────────────────────────────────────────────────────
-static lv_obj_t *s_lbl_sess_name;   // session name (or "No active session")
-static lv_obj_t *s_lbl_clock;
-static lv_obj_t *s_lbl_settings;    // gear icon
+static lv_obj_t *s_lbl_sess_name;   // session name (row 1, centred)
+static lv_obj_t *s_lbl_clock;       // date/time (row 2, left)
+static lv_obj_t *s_lbl_hdr_count;   // tag count (row 2, right)
 
-// ── Session info bar ──────────────────────────────────────────────────────────
-static lv_obj_t *s_bar;
-static lv_obj_t *s_lbl_sess_info;   // "Weighing · 5 · Open"
-
-// ── EID row ───────────────────────────────────────────────────────────────────
+// ── EID area ──────────────────────────────────────────────────────────────────
 static lv_obj_t *s_lbl_eid;
 static lv_obj_t *s_lbl_status_tag;  // "New animal" / "Already scanned" / "Ready to scan"
-static lv_obj_t *s_lbl_count;
 
 // ── Data panel and its sub-panels (one shown at a time) ───────────────────────
 static lv_obj_t *s_data_panel;
@@ -136,18 +134,13 @@ static void update_session_bar(void)
 {
     if (!s_has_session) {
         lv_label_set_text(s_lbl_sess_name, i18n_t(STR_SCAN_NO_SESSION));
-        lv_label_set_text(s_lbl_sess_info, "");
+        lv_label_set_text(s_lbl_hdr_count, "0");
         return;
     }
     lv_label_set_text(s_lbl_sess_name, s_session.name);
-
-    char info[64];
-    const char *type_str = i18n_t(type_en_str(s_session.type));
-    const char *st_str   = (s_session.status == SESSION_STATUS_OPEN)
-                           ? i18n_t("Open") : i18n_t("Closed");
-    snprintf(info, sizeof(info), "%s | %" PRIu32 " | %s",
-             type_str, s_session.tag_count, st_str);
-    lv_label_set_text(s_lbl_sess_info, info);
+    char cnt[16];
+    snprintf(cnt, sizeof(cnt), "%" PRIu32, s_session.tag_count);
+    lv_label_set_text(s_lbl_hdr_count, cnt);
 }
 
 static void update_weight_label(void)
@@ -306,20 +299,6 @@ static void on_back(lv_event_t *e)
     ui_manager_show(SCREEN_SESSION_MENU);
 }
 
-static void on_settings(lv_event_t *e)
-{
-    (void)e;
-    exit_kb_mode();
-    // Save pending tag before going to Settings, same as on_back.
-    if (s_eid_pending && s_has_session) {
-        tag_record_t rec;
-        if (screen_scan_get_record(&rec)) {
-            session_save_record(&rec);
-        }
-        screen_scan_clear_pending();
-    }
-    ui_manager_show(SCREEN_SETTINGS);
-}
 
 static void on_go_sessions(lv_event_t *e)
 {
@@ -485,103 +464,80 @@ void screen_scan_create(void)
     lv_obj_clear_flag(s_scr, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(s_scr, on_screen_loaded, LV_EVENT_SCREEN_LOADED, NULL);
 
-    // ── Header (y=0 h=40) ────────────────────────────────────────────────────
+    // ── Header (y=0 h=60) — 2 rows, back button spans full height ────────────
     s_hdr = lv_obj_create(s_scr);
-    lv_obj_set_size(s_hdr, 480, 40);
+    lv_obj_set_size(s_hdr, 480, 60);
     lv_obj_set_pos(s_hdr, 0, 0);
     lv_obj_clear_flag(s_hdr, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_border_width(s_hdr, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(s_hdr, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(s_hdr, 0, LV_PART_MAIN);
 
-    // Back button
+    // Back button — spans both rows
     lv_obj_t *btn_back = lv_btn_create(s_hdr);
-    lv_obj_set_size(btn_back, 36, 32);
-    lv_obj_align(btn_back, LV_ALIGN_LEFT_MID, 4, 0);
+    lv_obj_set_size(btn_back, 52, 56);
+    lv_obj_align(btn_back, LV_ALIGN_LEFT_MID, 2, 0);
     lv_obj_set_style_border_width(btn_back, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(btn_back, 4, LV_PART_MAIN);
     lv_obj_set_style_pad_all(btn_back, 0, LV_PART_MAIN);
-    lv_obj_set_ext_click_area(btn_back, 10);
+    lv_obj_set_ext_click_area(btn_back, 6);
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
     lv_obj_t *lbl_back = lv_label_create(btn_back);
     lv_label_set_text(lbl_back, LV_SYMBOL_LEFT);
+    lv_obj_set_style_text_font(lbl_back, &lv_font_montserrat_22, LV_PART_MAIN);
     lv_obj_center(lbl_back);
 
-    // Session name (truncated to fit)
+    // Row 1: session name — centred between back button and right edge
     s_lbl_sess_name = lv_label_create(s_hdr);
     lv_label_set_text(s_lbl_sess_name, "");
     lv_label_set_long_mode(s_lbl_sess_name, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(s_lbl_sess_name, 220);
+    lv_obj_set_width(s_lbl_sess_name, 390);
     lv_obj_set_style_text_font(s_lbl_sess_name, &lv_font_montserrat_18, LV_PART_MAIN);
-    lv_obj_set_pos(s_lbl_sess_name, 48, 12);
+    lv_obj_set_style_text_align(s_lbl_sess_name, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_pos(s_lbl_sess_name, 56, 6);
 
-    // Clock
+    // Row 2: clock (left) + tag count (right)
     s_lbl_clock = lv_label_create(s_hdr);
     lv_label_set_text(s_lbl_clock, "-- --- --:--");
-    lv_obj_set_style_text_font(s_lbl_clock, &lv_font_montserrat_18, LV_PART_MAIN);
-    lv_obj_align(s_lbl_clock, LV_ALIGN_RIGHT_MID, -44, 0);
+    lv_obj_set_style_text_font(s_lbl_clock, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_pos(s_lbl_clock, 58, 38);
 
-    // Settings button
-    lv_obj_t *btn_settings = lv_btn_create(s_hdr);
-    lv_obj_set_size(btn_settings, 36, 32);
-    lv_obj_align(btn_settings, LV_ALIGN_RIGHT_MID, -4, 0);
-    lv_obj_set_style_border_width(btn_settings, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(btn_settings, 4, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(btn_settings, 0, LV_PART_MAIN);
-    lv_obj_set_ext_click_area(btn_settings, 10);
-    lv_obj_add_event_cb(btn_settings, on_settings, LV_EVENT_CLICKED, NULL);
-    s_lbl_settings = lv_label_create(btn_settings);
-    lv_label_set_text(s_lbl_settings, LV_SYMBOL_SETTINGS);
-    lv_obj_center(s_lbl_settings);
+    s_lbl_hdr_count = lv_label_create(s_hdr);
+    lv_label_set_text(s_lbl_hdr_count, "0");
+    lv_obj_set_width(s_lbl_hdr_count, 100);
+    lv_obj_set_style_text_font(s_lbl_hdr_count, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_align(s_lbl_hdr_count, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
+    lv_obj_set_pos(s_lbl_hdr_count, 374, 38);  // 480 - 100 - 6
 
-    // ── Session info bar (y=40 h=22) ──────────────────────────────────────────
-    s_bar = lv_obj_create(s_scr);
-    lv_obj_set_size(s_bar, 480, 22);
-    lv_obj_set_pos(s_bar, 0, 40);
-    lv_obj_clear_flag(s_bar, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_border_width(s_bar, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(s_bar, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_bar, 0, LV_PART_MAIN);
-
-    s_lbl_sess_info = lv_label_create(s_bar);
-    lv_label_set_text(s_lbl_sess_info, "");
-    lv_obj_set_style_text_font(s_lbl_sess_info, &lv_font_montserrat_18, LV_PART_MAIN);
-    lv_obj_align(s_lbl_sess_info, LV_ALIGN_LEFT_MID, 8, 0);
-
-    // ── EID row (y=70 h=44) ───────────────────────────────────────────────────
+    // ── EID area (y=60 h=58) — 2 centred rows ─────────────────────────────────
     lv_obj_t *eid_row = lv_obj_create(s_scr);
-    lv_obj_set_size(eid_row, 480, 44);
-    lv_obj_set_pos(eid_row, 0, 70);
+    lv_obj_set_size(eid_row, 480, 58);
+    lv_obj_set_pos(eid_row, 0, 60);
     lv_obj_clear_flag(eid_row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_border_width(eid_row, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(eid_row, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(eid_row, 0, LV_PART_MAIN);
 
-    // tag value: left — badge: centre — count: right
+    // Row 1: EID value — centred, larger font
     s_lbl_eid = lv_label_create(eid_row);
     lv_label_set_text(s_lbl_eid, "---");
-    lv_obj_set_style_text_font(s_lbl_eid, &lv_font_montserrat_22, LV_PART_MAIN);
-    lv_obj_align(s_lbl_eid, LV_ALIGN_LEFT_MID, 8, 0);
+    lv_obj_set_style_text_font(s_lbl_eid, &lv_font_montserrat_26, LV_PART_MAIN);
+    lv_obj_align(s_lbl_eid, LV_ALIGN_TOP_MID, 0, 2);
 
+    // Row 2: status badge — centred
     s_lbl_status_tag = lv_label_create(eid_row);
     lv_obj_set_style_text_font(s_lbl_status_tag, &lv_font_montserrat_18, LV_PART_MAIN);
     lv_obj_set_style_radius(s_lbl_status_tag, 8, LV_PART_MAIN);
     lv_obj_set_style_pad_hor(s_lbl_status_tag, 8, LV_PART_MAIN);
     lv_obj_set_style_pad_ver(s_lbl_status_tag, 3, LV_PART_MAIN);
-    // Centre the badge in the gap between the EID text (~200px) and the count (~40px from right)
-    lv_obj_align(s_lbl_status_tag, LV_ALIGN_CENTER, 80, 0);
+    lv_obj_align(s_lbl_status_tag, LV_ALIGN_BOTTOM_MID, 0, -2);
     set_status_ready();
 
-    s_lbl_count = lv_label_create(eid_row);
-    lv_label_set_text(s_lbl_count, "0");
-    lv_obj_set_style_text_font(s_lbl_count, &lv_font_montserrat_18, LV_PART_MAIN);
-    lv_obj_align(s_lbl_count, LV_ALIGN_RIGHT_MID, -8, 0);
-
-    // ── Data panel (y=114 h=156) ──────────────────────────────────────────────
+    // ── Data panel (y=118 h=152) ──────────────────────────────────────────────
     // Height ends at y=270 to leave room for the note textarea below.
     s_data_panel = lv_obj_create(s_scr);
-    lv_obj_set_size(s_data_panel, 480, 156);
-    lv_obj_set_pos(s_data_panel, 0, 114);
+    lv_obj_set_size(s_data_panel, 480, 152);
+    lv_obj_set_pos(s_data_panel, 0, 118);
     lv_obj_clear_flag(s_data_panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_border_width(s_data_panel, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(s_data_panel, 0, LV_PART_MAIN);
@@ -589,7 +545,7 @@ void screen_scan_create(void)
 
     // ── Panel: General / Removal ───────────────────────────────────────────────
     s_panel_none = lv_obj_create(s_data_panel);
-    lv_obj_set_size(s_panel_none, 464, 140);
+    lv_obj_set_size(s_panel_none, 464, 136);
     lv_obj_set_pos(s_panel_none, 0, 0);
     lv_obj_set_style_bg_opa(s_panel_none, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_panel_none, 0, LV_PART_MAIN);
@@ -605,7 +561,7 @@ void screen_scan_create(void)
     //   [-10](76) gap(17) [-1](76) gap(17) [val](92) gap(17) [+1](76) gap(17) [+10](76)
     //   Total: 4×76 + 92 + 4×17 = 304 + 92 + 68 = 464 ✓
     s_panel_weighing = lv_obj_create(s_data_panel);
-    lv_obj_set_size(s_panel_weighing, 464, 140);
+    lv_obj_set_size(s_panel_weighing, 464, 136);
     lv_obj_set_pos(s_panel_weighing, 0, 0);
     lv_obj_set_style_bg_opa(s_panel_weighing, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_panel_weighing, 0, LV_PART_MAIN);
@@ -815,14 +771,13 @@ void screen_scan_create(void)
 
     // Objects hidden during keyboard mode
     s_hide_in_kb[0] = s_hdr;
-    s_hide_in_kb[1] = s_bar;
-    s_hide_in_kb[2] = eid_row;
-    s_hide_in_kb[3] = s_data_panel;
+    s_hide_in_kb[1] = eid_row;
+    s_hide_in_kb[2] = s_data_panel;
 
     // ── No-session overlay ────────────────────────────────────────────────────
     s_no_session_panel = lv_obj_create(s_scr);
-    lv_obj_set_size(s_no_session_panel, 480, 280);
-    lv_obj_set_pos(s_no_session_panel, 0, 40);
+    lv_obj_set_size(s_no_session_panel, 480, 260);
+    lv_obj_set_pos(s_no_session_panel, 0, 60);
     lv_obj_clear_flag(s_no_session_panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_border_width(s_no_session_panel, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(s_no_session_panel, 0, LV_PART_MAIN);
@@ -877,10 +832,7 @@ void screen_scan_set_session(const session_meta_t *meta)
         bool new_session = (!s_has_session || s_session.id != meta->id);
         s_session     = *meta;
         s_has_session = true;
-        // Reset count label to the actual stored count for this session
-        char cnt_buf[16];
-        snprintf(cnt_buf, sizeof(cnt_buf), "%" PRIu32, meta->tag_count);
-        lv_label_set_text(s_lbl_count, cnt_buf);
+        // Count is updated via update_session_bar() at the end of this function
         // Default weight to 100 kg when entering a new weighing session
         if (new_session && meta->type == SESSION_TYPE_WEIGHING) {
             s_weight_kg = 100;
@@ -888,16 +840,13 @@ void screen_scan_set_session(const session_meta_t *meta)
             update_weight_label();
         }
         lv_obj_add_flag(s_no_session_panel, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(s_bar,        LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(s_data_panel, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(s_ta_note,    LV_OBJ_FLAG_HIDDEN);
         show_data_panel_for_type(meta->type);
         populate_vax_panel();
     } else {
         s_has_session = false;
-        lv_label_set_text(s_lbl_count, "0");
         lv_obj_clear_flag(s_no_session_panel, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(s_bar,        LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_data_panel, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_ta_note,    LV_OBJ_FLAG_HIDDEN);
     }
@@ -936,9 +885,6 @@ void screen_scan_show_tag(const char *eid, bool is_duplicate)
     // screen_scan_update_count() will confirm the real value after the record is saved.
     if (!is_duplicate && s_has_session) {
         s_session.tag_count++;
-        char cnt_buf[16];
-        snprintf(cnt_buf, sizeof(cnt_buf), "%" PRIu32, s_session.tag_count);
-        lv_label_set_text(s_lbl_count, cnt_buf);
         update_session_bar();
     }
 
@@ -1049,11 +995,9 @@ void screen_scan_update_count(uint32_t count)
 {
     char buf[16];
     snprintf(buf, sizeof(buf), "%" PRIu32, count);
-    lv_label_set_text(s_lbl_count, buf);
-    // Also refresh the session bar tag_count
+    lv_label_set_text(s_lbl_hdr_count, buf);
     if (s_has_session) {
         s_session.tag_count = count;
-        update_session_bar();
     }
 }
 
@@ -1095,7 +1039,7 @@ void screen_scan_refresh_language(void)
     lv_label_set_text(s_lbl_tb[1], i18n_t(STR_TB_POSITIVE));
     lv_label_set_text(s_lbl_tb[2], i18n_t(STR_TB_NEGATIVE));
 
-    update_session_bar();
+    update_session_bar();  // refreshes session name + count
 
     if (!s_eid_pending) {
         set_status_ready();
