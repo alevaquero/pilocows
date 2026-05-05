@@ -118,17 +118,6 @@ static void exit_kb_mode(void);
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-static const char *type_en_str(uint8_t type)
-{
-    switch ((session_type_t)type) {
-        case SESSION_TYPE_WEIGHING:    return "Weighing";
-        case SESSION_TYPE_VACCINATION: return "Vaccination";
-        case SESSION_TYPE_PREGNANCY:   return "Pregnancy Check";
-        case SESSION_TYPE_TB_TEST:     return "TB Test";
-        case SESSION_TYPE_REMOVAL:     return "Removal";
-        default:                       return "General";
-    }
-}
 
 static void update_session_bar(void)
 {
