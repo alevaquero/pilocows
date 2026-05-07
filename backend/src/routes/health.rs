@@ -132,10 +132,10 @@ pub async fn create_pregnancy(
     Json(body): Json<CreatePregnancy>,
 ) -> Result<(StatusCode, Json<Pregnancy>)> {
     animal_exists(&pool, animal_id).await?;
-    let allowed = ["pregnant", "not_pregnant", "unknown"];
+    let allowed = ["unknown", "not_pregnant", "small_pregnant", "medium_pregnant", "big_pregnant", "rejected"];
     if !allowed.contains(&body.result.as_str()) {
         return Err(AppError::BadRequest(
-            "result must be pregnant, not_pregnant, or unknown".into(),
+            "result must be one of: unknown, not_pregnant, small_pregnant, medium_pregnant, big_pregnant, rejected".into(),
         ));
     }
     let row = sqlx::query_as::<_, Pregnancy>(
@@ -168,10 +168,10 @@ pub async fn patch_pregnancy(
     .ok_or(AppError::NotFound)?;
 
     if let Some(ref r) = body.result {
-        let allowed = ["pregnant", "not_pregnant", "unknown"];
+        let allowed = ["unknown", "not_pregnant", "small_pregnant", "medium_pregnant", "big_pregnant", "rejected"];
         if !allowed.contains(&r.as_str()) {
             return Err(AppError::BadRequest(
-                "result must be pregnant, not_pregnant, or unknown".into(),
+                "result must be one of: unknown, not_pregnant, small_pregnant, medium_pregnant, big_pregnant, rejected".into(),
             ));
         }
     }

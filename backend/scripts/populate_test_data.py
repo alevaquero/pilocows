@@ -61,7 +61,7 @@ VACCINES = [
 
 VACCINE_DOSES = ["5 mL", "2 mL", "10 mL", "1 dose", "3 mL"]
 
-PREGNANCY_RESULTS = ["pregnant", "not_pregnant", "unknown"]
+PREGNANCY_RESULTS = ["unknown", "not_pregnant", "small_pregnant", "medium_pregnant", "big_pregnant", "rejected"]
 TB_RESULTS        = ["negative", "positive", "inconclusive"]
 
 CATEGORY_SEX = {
@@ -212,7 +212,7 @@ def create_pregnancy(base_url: str, animal_id: int, event_date: str) -> None:
         "checked_at": event_date,
         "notes":      "",
     }
-    if result == "pregnant":
+    if result in ("small_pregnant", "medium_pregnant", "big_pregnant"):
         body["due_date"] = rand_date_after(event_date, max_days_forward=280)
     post(base_url, f"/animals/{animal_id}/pregnancies", body)
 

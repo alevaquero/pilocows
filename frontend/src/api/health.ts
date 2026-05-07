@@ -180,7 +180,7 @@ export const healthApi = {
     api.delete<void>(`/animals/${animal_id}/removal`),
 }
 
-export const PREGNANCY_RESULTS = ['pregnant', 'not_pregnant', 'unknown']
+export const PREGNANCY_RESULTS = ['unknown', 'not_pregnant', 'small_pregnant', 'medium_pregnant', 'big_pregnant', 'rejected']
 export const TB_RESULTS = ['negative', 'positive', 'inconclusive']
 export const REMOVAL_REASONS = ['sold', 'died', 'slaughtered', 'other']
 export const COMMON_VACCINES = [

@@ -55,6 +55,11 @@ CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_OTA_ALLOW_HTTP=y
 
 # LVGL — configured via idf_component.yml + Kconfig
+# Use system malloc/free so LVGL allocates from the internal SRAM heap.
+# A fixed BSS pool (LV_MEM_CUSTOM=n) ends up in PSRAM due to
+# SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y, which makes every allocation slow
+# and starves IDLE0 during startup (WDT). malloc prefers internal SRAM.
+CONFIG_LV_MEM_CUSTOM=y
 CONFIG_LV_COLOR_DEPTH=16
 CONFIG_LV_COLOR_SCREEN_TRANSP=n
 CONFIG_LV_FONT_MONTSERRAT_14=y
