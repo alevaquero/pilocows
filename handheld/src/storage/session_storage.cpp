@@ -377,6 +377,25 @@ esp_err_t session_mark_synced(uint32_t id)
     return err;
 }
 
+esp_err_t session_save_note(uint32_t id, const char *note)
+{
+    if (!note || id == 0) return ESP_ERR_INVALID_ARG;
+    LOCK();
+    session_meta_t m;
+    esp_err_t err = meta_read(id, &m);
+    if (err != ESP_OK || m.id != id || m.status == SESSION_STATUS_DELETED) {
+        UNLOCK();
+        return ESP_ERR_NOT_FOUND;
+    }
+    strlcpy(m.note, note, sizeof(m.note));
+    err = meta_write(&m);
+    if (err == ESP_OK && id == s_active_id && s_cache_valid) {
+        strlcpy(s_active_cache.note, note, sizeof(s_active_cache.note));
+    }
+    UNLOCK();
+    return err;
+}
+
 int session_list_records(uint32_t session_id, tag_record_t *out, int max_count)
 {
     if (!out || max_count <= 0 || session_id == 0) return 0;

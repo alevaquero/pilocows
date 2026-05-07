@@ -30,6 +30,7 @@ pub fn run() {
             commands::ble_connect,
             commands::ble_read_sessions,
             commands::ble_read_session_data,
+            commands::ble_read_session_meta,
             commands::ble_mark_session_synced,
             commands::ble_delete_session,
             commands::ble_disconnect,

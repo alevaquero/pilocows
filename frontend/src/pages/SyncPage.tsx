@@ -8,8 +8,35 @@ import {
   type SyncResponse,
   syncApi,
 } from '../api/sync'
+import {
+  sessionsApi,
+  type IncomingSession,
+  type IncomingSessionRecord,
+} from '../api/sessions'
 import { tagsApi } from '../api/tags'
 import * as dlog from '../debugLog'
+
+// ---------------------------------------------------------------------------
+// Helpers — convert BLE types to sessions/sync payload types
+// ---------------------------------------------------------------------------
+
+const SESSION_TYPE_INT: Record<string, number> = {
+  general: 0, weighing: 1, vaccination: 2, pregnancy: 3, tb_test: 4,
+}
+
+function bleRecordToIncoming(r: SessionRecord): IncomingSessionRecord {
+  const ts = Math.floor(new Date(r.scanned_at).getTime() / 1000)
+  return {
+    eid: r.eid,
+    ts,
+    type: SESSION_TYPE_INT[r.event_type] ?? 0,
+    weight_kg: r.weight_kg,
+    pregnancy: r.pregnancy_result,
+    tb_result: r.tb_result,
+    vaccines: r.vaccines,
+    note: r.notes,
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Per-session sync state
@@ -208,12 +235,19 @@ export default function SyncPage() {
     dlog.log(`Syncing session ${session.id}: "${session.name}"`)
 
     try {
-      // Step 1 — read records from handheld
-      dlog.log(`  [1/3] Sending CONTROL select  id=${session.id}…`)
+      // Step 1a — read SESSION_META
+      dlog.log(`  [1/4] Reading SESSION_META for session ${session.id}…`)
+      const meta = await invoke<{ id: number; device_id: string; name: string; session_type: number; status: number; created_at: number; tag_count: number; synced: boolean; note: string }>('ble_read_session_meta', {
+        sessionId: session.id,
+      })
+      dlog.log(`  [1/4] SESSION_META: name="${meta.name}" type=${meta.session_type} device=${meta.device_id}`)
+
+      // Step 1b — read SESSION_DATA records
+      dlog.log(`  [2/4] Reading SESSION_DATA for session ${session.id}…`)
       const records = await invoke<SessionRecord[]>('ble_read_session_data', {
         sessionId: session.id,
       })
-      dlog.log(`  [1/3] SESSION_DATA received — ${records.length} record(s)`)
+      dlog.log(`  [2/4] SESSION_DATA received — ${records.length} record(s)`)
       records.forEach((r, i) => {
         const parts = [
           `eid=${r.eid}`,
@@ -228,26 +262,49 @@ export default function SyncPage() {
         dlog.dbg(`    [${i + 1}] ${parts.join('  ')}`)
       })
 
-      // Step 2 — post to backend
-      dlog.log(`  [2/3] Posting ${records.length} records to backend…`)
+      // Step 2 — POST to sessions/sync (persist session + records in DB)
+      dlog.log(`  [3/4] Posting session + ${records.length} records to backend…`)
+      const incomingSession: IncomingSession = {
+        handheld_session_id: meta.id,
+        device_id: meta.device_id,
+        name: meta.name,
+        type: meta.session_type,
+        status: meta.status,
+        created_at: meta.created_at,
+        tag_count: meta.tag_count,
+        note: meta.note,
+      }
+      try {
+        const sessResp = await sessionsApi.sync({
+          session: incomingSession,
+          records: records.map(bleRecordToIncoming),
+        })
+        dlog.log(`  [3/4] sessions/sync OK — db_id=${sessResp.session_id} upserted=${sessResp.upserted_records}`)
+      } catch (apiErr) {
+        dlog.err(`  [3/4] sessions/sync failed: ${String(apiErr)}`)
+        throw apiErr
+      }
+
+      // Step 3 — also post to legacy scan endpoint (existing unregistered-EID flow)
+      dlog.log(`  [3/4b] Posting to legacy /sync/scans…`)
       let resp: SyncResponse
       try {
         resp = await syncApi.postScans(records)
       } catch (apiErr) {
-        dlog.err(`  [2/3] Backend POST failed: ${String(apiErr)}`)
+        dlog.err(`  [3/4b] Backend /sync/scans failed: ${String(apiErr)}`)
         throw apiErr
       }
       dlog.log(
-        `  [2/3] Backend accepted ${resp.accepted} record(s)` +
+        `  [3/4b] /sync/scans accepted ${resp.accepted} record(s)` +
         (resp.unregistered_eids.length > 0
           ? `,  ${resp.unregistered_eids.length} unregistered EID(s): ${resp.unregistered_eids.join(', ')}`
           : '')
       )
 
-      // Step 3 — mark synced on handheld
-      dlog.log(`  [3/3] Marking session ${session.id} as synced on handheld…`)
+      // Step 4 — mark synced on handheld
+      dlog.log(`  [4/4] Marking session ${session.id} as synced on handheld…`)
       await invoke('ble_mark_session_synced', { sessionId: session.id })
-      dlog.log(`  [3/3] Done.`)
+      dlog.log(`  [4/4] Done.`)
       dlog.log(`Session ${session.id} sync complete.`)
 
       // Update synced flag in local list

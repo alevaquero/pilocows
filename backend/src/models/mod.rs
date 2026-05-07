@@ -273,3 +273,124 @@ pub struct AnimalQuery {
 pub struct TagQuery {
     pub unassigned: Option<bool>,
 }
+
+// ─── Sessions ────────────────────────────────────────────────────────────────
+
+/// Full session row from the DB (no records).
+#[derive(Debug, Serialize, FromRow)]
+pub struct Session {
+    pub id: i64,
+    pub handheld_session_id: i64,
+    pub device_id: String,
+    pub name: String,
+    #[sqlx(rename = "type")]
+    pub session_type: i64,
+    pub status: i64,
+    pub created_at: String,
+    pub tag_count: i64,
+    pub handheld_note: String,
+    pub farm: String,
+    pub operator: String,
+    pub comments: String,
+    pub synced_at: String,
+}
+
+/// Session row + computed record_count for list responses.
+#[derive(Debug, Serialize, FromRow)]
+pub struct SessionSummary {
+    pub id: i64,
+    pub handheld_session_id: i64,
+    pub device_id: String,
+    pub name: String,
+    #[sqlx(rename = "type")]
+    pub session_type: i64,
+    pub status: i64,
+    pub created_at: String,
+    pub tag_count: i64,
+    pub handheld_note: String,
+    pub farm: String,
+    pub operator: String,
+    pub comments: String,
+    pub synced_at: String,
+    pub record_count: i64,
+}
+
+/// One tag-record row from the DB.
+#[derive(Debug, Serialize, FromRow)]
+pub struct SessionRecord {
+    pub id: i64,
+    pub session_id: i64,
+    pub eid: String,
+    pub scanned_at: String,
+    pub event_data: String,  // JSON blob
+    pub note: String,
+    // Joined from tags/animals — NULL when EID is not registered.
+    pub animal_id: Option<i64>,
+    pub animal_name: Option<String>,
+}
+
+/// Full session detail: session metadata + all records.
+#[derive(Debug, Serialize)]
+pub struct SessionDetail {
+    #[serde(flatten)]
+    pub session: Session,
+    pub records: Vec<SessionRecord>,
+}
+
+// ── Incoming sync payload ─────────────────────────────────────────────────────
+
+/// Session metadata as sent by the frontend after reading SESSION_META from BLE.
+#[derive(Debug, Deserialize)]
+pub struct IncomingSession {
+    pub handheld_session_id: i64,
+    pub device_id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub session_type: i64,
+    pub status: i64,
+    pub created_at: i64,    // Unix timestamp from handheld
+    pub tag_count: i64,
+    #[serde(default)]
+    pub note: String,       // handheld session note
+}
+
+/// One tag record as sent by the frontend after reading SESSION_DATA pages from BLE.
+#[derive(Debug, Deserialize)]
+pub struct IncomingSessionRecord {
+    pub eid: String,
+    pub ts: i64,            // Unix timestamp from handheld
+    #[serde(rename = "type")]
+    pub session_type: i64,
+    // Type-specific fields (only one will be present per record)
+    pub weight_kg: Option<f64>,
+    pub pregnancy: Option<String>,
+    pub tb_result: Option<String>,
+    pub vaccines: Option<String>,
+    #[serde(default)]
+    pub note: String,
+}
+
+/// Full sync body: one session + all its records.
+#[derive(Debug, Deserialize)]
+pub struct SyncSessionPayload {
+    pub session: IncomingSession,
+    pub records: Vec<IncomingSessionRecord>,
+}
+
+/// Response from POST /sessions/sync.
+#[derive(Debug, Serialize)]
+pub struct SyncSessionResponse {
+    pub session_id: i64,   // DB id of the upserted session
+    pub upserted_records: usize,
+}
+
+// ── Session patch ─────────────────────────────────────────────────────────────
+
+/// Only frontend-editable fields; handheld_note can also be edited here.
+#[derive(Debug, Deserialize, Default)]
+pub struct PatchSession {
+    pub farm: Option<String>,
+    pub operator: Option<String>,
+    pub comments: Option<String>,
+    pub handheld_note: Option<String>,
+}

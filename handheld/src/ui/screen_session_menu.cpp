@@ -137,8 +137,8 @@ void screen_session_menu_create(void)
     // ── Layout (480×320, no header)
     //   y=  8  Active session card       (464×90)
     //   y= 44  "No active session" label (centered, shown when no card)
-    //   y=106  Resume + Close row        (464×62, hidden when no active session)
-    //   y=176  New + List row            (464×62, always visible)
+    //   y=106  Resume + Close row        (464×70, hidden when no active session)
+    //   y=182  New + List row            (464×70, always visible)
     //   y=260  Settings button           (464×52, always visible, bottom)
 
     // ── Active session card ───────────────────────────────────────────────────
@@ -164,7 +164,7 @@ void screen_session_menu_create(void)
 
     // ── Resume + Close row ────────────────────────────────────────────────────
     s_row_resume = lv_obj_create(s_scr);
-    lv_obj_set_size(s_row_resume, 464, 62);
+    lv_obj_set_size(s_row_resume, 464, 70);
     lv_obj_set_pos(s_row_resume, 8, 106);
     lv_obj_clear_flag(s_row_resume, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_opa(s_row_resume, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -172,7 +172,7 @@ void screen_session_menu_create(void)
     lv_obj_set_style_pad_all(s_row_resume, 0, LV_PART_MAIN);
 
     lv_obj_t *btn_resume = lv_btn_create(s_row_resume);
-    lv_obj_set_size(btn_resume, 225, 62);
+    lv_obj_set_size(btn_resume, 225, 70);
     lv_obj_set_pos(btn_resume, 0, 0);
     lv_obj_set_style_radius(btn_resume, 6, LV_PART_MAIN);
     lv_obj_set_style_bg_color(btn_resume, lv_color_hex(0x27AE60), LV_PART_MAIN);
@@ -185,7 +185,7 @@ void screen_session_menu_create(void)
     lv_obj_center(s_lbl_btn_resume);
 
     lv_obj_t *btn_close = lv_btn_create(s_row_resume);
-    lv_obj_set_size(btn_close, 231, 62);
+    lv_obj_set_size(btn_close, 231, 70);
     lv_obj_set_pos(btn_close, 233, 0);
     lv_obj_set_style_radius(btn_close, 6, LV_PART_MAIN);
     lv_obj_set_style_bg_color(btn_close, lv_color_hex(0xE67E22), LV_PART_MAIN);
@@ -206,16 +206,17 @@ void screen_session_menu_create(void)
     lv_obj_set_style_text_align(s_lbl_no_session, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
 
     // ── New + List row (always visible) ───────────────────────────────────────
+    // y=182: 6px gap below resume row (y=106 h=70 → bottom=176)
     s_row_always = lv_obj_create(s_scr);
-    lv_obj_set_size(s_row_always, 464, 62);
-    lv_obj_set_pos(s_row_always, 8, 176);
+    lv_obj_set_size(s_row_always, 464, 70);
+    lv_obj_set_pos(s_row_always, 8, 182);
     lv_obj_clear_flag(s_row_always, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_opa(s_row_always, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_row_always, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(s_row_always, 0, LV_PART_MAIN);
 
     lv_obj_t *btn_new = lv_btn_create(s_row_always);
-    lv_obj_set_size(btn_new, 225, 62);
+    lv_obj_set_size(btn_new, 225, 70);
     lv_obj_set_pos(btn_new, 0, 0);
     lv_obj_set_style_radius(btn_new, 6, LV_PART_MAIN);
     lv_obj_set_ext_click_area(btn_new, 10);
@@ -226,7 +227,7 @@ void screen_session_menu_create(void)
     lv_obj_center(s_lbl_btn_new);
 
     lv_obj_t *btn_list = lv_btn_create(s_row_always);
-    lv_obj_set_size(btn_list, 231, 62);
+    lv_obj_set_size(btn_list, 231, 70);
     lv_obj_set_pos(btn_list, 233, 0);
     lv_obj_set_style_radius(btn_list, 6, LV_PART_MAIN);
     lv_obj_set_ext_click_area(btn_list, 10);

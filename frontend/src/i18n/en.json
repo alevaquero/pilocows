@@ -2,6 +2,7 @@
   "nav": {
     "animals": "Animals",
     "tags": "Tags",
+    "sessions": "Sessions",
     "sync": "Sync"
   },
   "tags": {
@@ -65,9 +66,12 @@
     "result": "Result",
     "checked_at": "Check Date",
     "due_date": "Due Date",
-    "pregnant": "Pregnant",
-    "not_pregnant": "Not Pregnant",
     "unknown": "Unknown",
+    "not_pregnant": "Not Pregnant",
+    "small_pregnant": "Small",
+    "medium_pregnant": "Medium",
+    "big_pregnant": "Big",
+    "rejected": "Rejected",
     "notes": "Notes"
   },
   "tb_test": {
@@ -123,6 +127,35 @@
     "register_tag": "Register Tag",
     "registered_ok": "Registered",
     "no_unregistered": "All tags are known."
+  },
+  "sessions": {
+    "title": "Sessions",
+    "no_sessions": "No sessions synced yet.",
+    "type_general": "General",
+    "type_weighing": "Weighing",
+    "type_vaccination": "Vaccination",
+    "type_pregnancy": "Pregnancy",
+    "type_tb_test": "TB Test",
+    "status_open": "Open",
+    "status_closed": "Closed",
+    "records": "records",
+    "farm": "Farm",
+    "operator": "Operator",
+    "comments": "Comments",
+    "handheld_note": "Handheld note",
+    "session_note": "Session note",
+    "edit_session": "Edit session",
+    "delete_session": "Delete session",
+    "delete_confirm": "Permanently delete this session and all its records?",
+    "records_title": "Scanned Animals",
+    "col_eid": "EID",
+    "col_animal": "Animal",
+    "col_time": "Time",
+    "col_data": "Data",
+    "col_note": "Note",
+    "unknown_animal": "Unknown",
+    "register_animal": "Register",
+    "saved": "Saved"
   },
   "common": {
     "save": "Save",

@@ -1,6 +1,7 @@
 pub mod animals;
 pub mod health;
 pub mod removal;
+pub mod sessions;
 pub mod sync;
 pub mod tags;
 
@@ -71,6 +72,21 @@ pub fn router(pool: SqlitePool) -> Router {
         .route(
             "/api/v1/sync/scans",
             post(sync::sync_scans).get(sync::list_scan_events),
+        )
+        // Sessions
+        .route(
+            "/api/v1/sessions/sync",
+            post(sessions::sync_session),
+        )
+        .route(
+            "/api/v1/sessions",
+            get(sessions::list_sessions),
+        )
+        .route(
+            "/api/v1/sessions/:id",
+            get(sessions::get_session)
+                .patch(sessions::patch_session)
+                .delete(sessions::delete_session),
         )
         .with_state(pool)
 }

@@ -1,4 +1,4 @@
-use crate::ble::{self, DeviceInfo, HeldSession, SessionRecord};
+use crate::ble::{self, DeviceInfo, HeldSession, SessionMeta, SessionRecord};
 use crate::AppState;
 use tauri::State;
 use tokio::time::{timeout, Duration};
@@ -72,6 +72,25 @@ pub async fn ble_read_session_data(
     timeout(Duration::from_secs(60), ble::read_session_data(conn, session_id))
         .await
         .map_err(|_| "Session data read timed out (60s) — device may be out of range".to_string())?
+}
+
+// ---------------------------------------------------------------------------
+// Read session metadata
+// ---------------------------------------------------------------------------
+
+/// Read the SESSION_META characteristic for the given session id.
+#[tauri::command]
+pub async fn ble_read_session_meta(
+    state: State<'_, AppState>,
+    session_id: u32,
+) -> Result<SessionMeta, String> {
+    let conn_guard = state.conn.lock().await;
+    let conn = conn_guard
+        .as_ref()
+        .ok_or("Not connected — call ble_connect first")?;
+    timeout(Duration::from_secs(30), ble::read_session_meta(conn, session_id))
+        .await
+        .map_err(|_| "Session meta read timed out (30s) — device may be out of range".to_string())?
 }
 
 // ---------------------------------------------------------------------------

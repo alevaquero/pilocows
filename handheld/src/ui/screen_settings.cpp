@@ -67,12 +67,7 @@ static void refresh_language(void)
 static void on_back(lv_event_t *e)
 {
     (void)e;
-    session_meta_t meta;
-    if (session_get_active(&meta)) {
-        ui_manager_show(SCREEN_SCAN);
-    } else {
-        ui_manager_show(SCREEN_SESSION_MENU);
-    }
+    ui_manager_show(SCREEN_SESSION_MENU);
 }
 
 static void on_language(lv_event_t *e)

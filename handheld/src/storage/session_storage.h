@@ -32,9 +32,12 @@ typedef enum {
 
 // ── Per-tag data payload types ────────────────────────────────────────────────
 typedef enum {
-    PREGNANCY_UNKNOWN = 0,
-    PREGNANCY_YES     = 1,
-    PREGNANCY_NO      = 2,
+    PREGNANCY_UNKNOWN  = 0,
+    PREGNANCY_NO       = 1,
+    PREGNANCY_SMALL    = 2,
+    PREGNANCY_MEDIUM   = 3,
+    PREGNANCY_BIG      = 4,
+    PREGNANCY_REJECTED = 5,
 } pregnancy_result_t;
 
 typedef enum {
@@ -43,21 +46,22 @@ typedef enum {
     TB_NEGATIVE     = 2,
 } tb_result_t;
 
-// ── Session metadata — 128 bytes, stored in the sessions index file ───────────
+// ── Session metadata — 256 bytes, stored in the sessions index file ───────────
 // Offset in index file = (id - 1) * sizeof(session_meta_t).
 // id == 0 is a tombstone (deleted record).
 typedef struct __attribute__((packed)) {
-    uint32_t id;                        //  4 — 1-based; 0 = tombstone
-    char     name[SESSION_NAME_MAX];    // 64 — display name, user-editable
-    uint8_t  type;                      //  1 — session_type_t
-    uint8_t  status;                    //  1 — SESSION_STATUS_*
-    time_t   created_at;                //  4 — Unix timestamp (UTC)
-    uint32_t tag_count;                 //  4 — unique animals in this session
-    uint8_t  vax_count;                 //  1 — vaccines selected (type VACCINATION only)
-    uint8_t  vax_ids[SESSION_VAX_MAX];  // 15 — vaccine IDs from vaccine config
-    uint8_t  synced;                    //  1 — 1 = marked synced by desktop (was _pad[0])
-    uint8_t  _pad[33];                  // 33 — reserved; backward compat (old files: 0 = not synced)
-} session_meta_t;                       // TOTAL: 128 bytes
+    uint32_t id;                        //   4 — 1-based; 0 = tombstone
+    char     name[SESSION_NAME_MAX];    //  64 — display name, user-editable
+    uint8_t  type;                      //   1 — session_type_t
+    uint8_t  status;                    //   1 — SESSION_STATUS_*
+    time_t   created_at;                //   4 — Unix timestamp (UTC)
+    uint32_t tag_count;                 //   4 — unique animals in this session
+    uint8_t  vax_count;                 //   1 — vaccines selected (type VACCINATION only)
+    uint8_t  vax_ids[SESSION_VAX_MAX];  //  15 — vaccine IDs from vaccine config
+    uint8_t  synced;                    //   1 — 1 = marked synced by desktop
+    char     note[SESSION_NOTE_MAX];    // 128 — free-text session note
+    uint8_t  _pad[33];                  //  33 — reserved for future use
+} session_meta_t;                       // TOTAL: 256 bytes
 
 // ── Tag scan record — 164 bytes, stored in per-session record files ───────────
 // One record per unique EID per session. Overwritten on re-scan (not appended).
@@ -131,6 +135,9 @@ esp_err_t session_get_meta(uint32_t id, session_meta_t *out);
 
 // Mark a session as synced (sets session_meta_t.synced = 1).
 esp_err_t session_mark_synced(uint32_t id);
+
+// Update the free-text note for any session (not just the active one).
+esp_err_t session_save_note(uint32_t id, const char *note);
 
 // Read all tag records for any session (not just the active one).
 // Records are returned in scan order (first scanned first).

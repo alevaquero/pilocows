@@ -44,8 +44,10 @@ static lv_obj_t *s_lbl_clock;       // date/time (row 2, left)
 static lv_obj_t *s_lbl_hdr_count;   // tag count (row 2, right)
 
 // ── EID area ──────────────────────────────────────────────────────────────────
+static lv_obj_t *s_eid_row;
 static lv_obj_t *s_lbl_eid;
 static lv_obj_t *s_lbl_status_tag;  // "New animal" / "Already scanned" / "Ready to scan"
+static lv_obj_t *s_lbl_vax_compact; // single-line vaccine list (no-input vax sessions only)
 
 // ── Data panel and its sub-panels (one shown at a time) ───────────────────────
 static lv_obj_t *s_data_panel;
@@ -64,9 +66,14 @@ static lv_obj_t *s_btn_w_plus100;
 static lv_obj_t *s_lbl_wunit;
 
 static lv_obj_t *s_panel_preg;
-static lv_obj_t *s_lbl_preg_title;
-static lv_obj_t *s_btn_preg[3];       // PREGNANCY_UNKNOWN, YES, NO
-static lv_obj_t *s_lbl_preg[3];
+static lv_obj_t *s_btn_preg[6];       // 6 pregnancy outcomes (display order)
+static lv_obj_t *s_lbl_preg[6];
+
+// Display order: Unknown, Not pregnant, Rejected | Small, Medium, Big
+static const pregnancy_result_t s_preg_btn_val[6] = {
+    PREGNANCY_UNKNOWN, PREGNANCY_NO, PREGNANCY_REJECTED,
+    PREGNANCY_SMALL,   PREGNANCY_MEDIUM, PREGNANCY_BIG,
+};
 
 static lv_obj_t *s_panel_tb;
 static lv_obj_t *s_lbl_tb_title;
@@ -77,10 +84,17 @@ static lv_obj_t *s_panel_vax;
 static lv_obj_t *s_lbl_vax_title;
 static lv_obj_t *s_lbl_vax_list;      // comma-separated vaccine names
 
-// ── Note field ────────────────────────────────────────────────────────────────
+// ── Note field (per-animal) ───────────────────────────────────────────────────
 static lv_obj_t *s_ta_note;
 static lv_obj_t *s_kb_note;
 static lv_obj_t *s_lbl_kb_note_title;  // "Note" shown above textarea during kb mode
+
+// ── Session note button + modal ───────────────────────────────────────────────
+static lv_obj_t *s_btn_sess_note;      // pencil button in scan header (top-right)
+static lv_obj_t *s_sess_note_overlay;  // full-screen modal container
+static lv_obj_t *s_ta_sess_note;       // textarea inside modal
+static lv_obj_t *s_kb_sess_note;       // keyboard inside modal
+static bool      s_sess_note_active = false;
 
 // ── No-session overlay ────────────────────────────────────────────────────────
 static lv_obj_t *s_no_session_panel;
@@ -113,6 +127,8 @@ static void update_preg_buttons(void);
 static void update_tb_buttons(void);
 static void enter_kb_mode(void);
 static void exit_kb_mode(void);
+static void open_sess_note_modal(void);
+static void close_sess_note_modal(void);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -141,8 +157,8 @@ static void update_weight_label(void)
 
 static void update_preg_buttons(void)
 {
-    for (int i = 0; i < 3; i++) {
-        bool sel = (s_preg == (pregnancy_result_t)i);
+    for (int i = 0; i < 6; i++) {
+        bool sel = (s_preg == s_preg_btn_val[i]);
         lv_obj_set_style_bg_color(s_btn_preg[i],
             sel ? lv_palette_main(LV_PALETTE_BLUE)
                 : lv_palette_lighten(LV_PALETTE_BLUE, 4),
@@ -171,18 +187,59 @@ static void update_tb_buttons(void)
 
 static void show_data_panel_for_type(uint8_t type)
 {
-    lv_obj_add_flag(s_panel_none,     LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_panel_weighing, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_panel_preg,     LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_panel_tb,       LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_panel_vax,      LV_OBJ_FLAG_HIDDEN);
+    // Hide everything first
+    lv_obj_add_flag(s_panel_none,      LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_panel_weighing,  LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_panel_preg,      LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_panel_tb,        LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_panel_vax,       LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_lbl_vax_compact, LV_OBJ_FLAG_HIDDEN);
 
-    switch ((session_type_t)type) {
-        case SESSION_TYPE_WEIGHING:    lv_obj_clear_flag(s_panel_weighing, LV_OBJ_FLAG_HIDDEN); break;
-        case SESSION_TYPE_VACCINATION: lv_obj_clear_flag(s_panel_vax,      LV_OBJ_FLAG_HIDDEN); break;
-        case SESSION_TYPE_PREGNANCY:   lv_obj_clear_flag(s_panel_preg,     LV_OBJ_FLAG_HIDDEN); break;
-        case SESSION_TYPE_TB_TEST:     lv_obj_clear_flag(s_panel_tb,       LV_OBJ_FLAG_HIDDEN); break;
-        default:                       lv_obj_clear_flag(s_panel_none,     LV_OBJ_FLAG_HIDDEN); break;
+    bool is_input = (type == SESSION_TYPE_WEIGHING  ||
+                     type == SESSION_TYPE_PREGNANCY  ||
+                     type == SESSION_TYPE_TB_TEST);
+
+    if (is_input) {
+        // EID area: y=60 h=70 — more vertical gap between EID value and badge
+        lv_obj_set_size(s_eid_row, 480, 70);
+        lv_obj_set_pos (s_eid_row, 0, 60);
+        lv_obj_align(s_lbl_eid,        LV_ALIGN_TOP_MID,    0,  6);
+        lv_obj_align(s_lbl_status_tag, LV_ALIGN_BOTTOM_MID, 0, -6);
+
+        // Data panel: y=130 h=134, just below EID area, above note textarea (y=264)
+        lv_obj_set_size(s_data_panel, 480, 134);
+        lv_obj_set_pos (s_data_panel, 0, 130);
+        lv_obj_clear_flag(s_data_panel, LV_OBJ_FLAG_HIDDEN);
+
+        switch ((session_type_t)type) {
+            case SESSION_TYPE_WEIGHING:  lv_obj_clear_flag(s_panel_weighing, LV_OBJ_FLAG_HIDDEN); break;
+            case SESSION_TYPE_PREGNANCY: lv_obj_clear_flag(s_panel_preg,     LV_OBJ_FLAG_HIDDEN); break;
+            case SESSION_TYPE_TB_TEST:   lv_obj_clear_flag(s_panel_tb,       LV_OBJ_FLAG_HIDDEN); break;
+            default: break;
+        }
+    } else if (type == SESSION_TYPE_VACCINATION) {
+        // EID+badge centred in y=60..270 space (210px), shifted up to leave
+        // room for the compact vaccine line below.
+        // Group: EID-row(90) + gap(12) + vax-line(28) = 130px
+        // Top: 60 + (210-130)/2 = 100
+        lv_obj_set_size(s_eid_row, 480, 90);
+        lv_obj_set_pos (s_eid_row, 0, 100);
+        lv_obj_align(s_lbl_eid,        LV_ALIGN_TOP_MID,    0, 10);
+        lv_obj_align(s_lbl_status_tag, LV_ALIGN_BOTTOM_MID, 0, -10);
+
+        lv_obj_add_flag(s_data_panel, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(s_lbl_vax_compact, LV_OBJ_FLAG_HIDDEN);
+        // Compact vax label sits 12px below the EID row (y=100+90+12=202)
+        lv_obj_set_pos(s_lbl_vax_compact, 0, 202);
+    } else {
+        // General / Removal: EID+badge centred vertically in y=60..270 (210px)
+        // EID-row height 90px → top = 60 + (210-90)/2 = 120
+        lv_obj_set_size(s_eid_row, 480, 90);
+        lv_obj_set_pos (s_eid_row, 0, 120);
+        lv_obj_align(s_lbl_eid,        LV_ALIGN_TOP_MID,    0, 10);
+        lv_obj_align(s_lbl_status_tag, LV_ALIGN_BOTTOM_MID, 0, -10);
+
+        lv_obj_add_flag(s_data_panel, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -191,6 +248,7 @@ static void populate_vax_panel(void)
 {
     if (!s_has_session || s_session.vax_count == 0) {
         lv_label_set_text(s_lbl_vax_list, "—");
+        lv_label_set_text(s_lbl_vax_compact, "—");
         return;
     }
     char buf[128] = {0};
@@ -201,7 +259,9 @@ static void populate_vax_panel(void)
             strncat(buf, name, sizeof(buf) - strlen(buf) - 1);
         }
     }
-    lv_label_set_text(s_lbl_vax_list, buf[0] ? buf : "—");
+    const char *text = buf[0] ? buf : "—";
+    lv_label_set_text(s_lbl_vax_list, text);
+    lv_label_set_text(s_lbl_vax_compact, text);
 }
 
 // Enable or disable all data-entry controls.
@@ -221,7 +281,7 @@ static void update_controls_enabled(bool enabled)
     }
 
     // Pregnancy buttons
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 6; i++) {
         if (enabled) lv_obj_clear_state(s_btn_preg[i], LV_STATE_DISABLED);
         else         lv_obj_add_state  (s_btn_preg[i], LV_STATE_DISABLED);
     }
@@ -263,8 +323,34 @@ static void exit_kb_mode(void)
     for (int i = 0; s_hide_in_kb[i]; i++) lv_obj_clear_flag(s_hide_in_kb[i], LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_lbl_kb_note_title, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_kb_note, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_pos(s_ta_note, 8, 270);
+    lv_obj_set_pos(s_ta_note, 8, 264);
     lv_obj_set_width(s_ta_note, 464);
+}
+
+static void open_sess_note_modal(void)
+{
+    if (s_sess_note_active || !s_has_session) return;
+    exit_kb_mode();  // dismiss animal note keyboard if open
+    s_sess_note_active = true;
+    // Pre-fill with the current session note
+    lv_textarea_set_text(s_ta_sess_note, s_session.note);
+    lv_keyboard_set_textarea(s_kb_sess_note, s_ta_sess_note);
+    lv_obj_clear_flag(s_sess_note_overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_scroll_to_y(s_ta_sess_note, 0, LV_ANIM_OFF);
+}
+
+static void close_sess_note_modal(void)
+{
+    if (!s_sess_note_active) return;
+    s_sess_note_active = false;
+    // Save note to storage and update local cache
+    const char *text = lv_textarea_get_text(s_ta_sess_note);
+    if (text && s_has_session) {
+        strlcpy(s_session.note, text, sizeof(s_session.note));
+        session_save_note(s_session.id, text);
+    }
+    lv_obj_add_flag(s_sess_note_overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_keyboard_set_textarea(s_kb_sess_note, NULL);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -274,6 +360,7 @@ static void exit_kb_mode(void)
 static void on_back(lv_event_t *e)
 {
     (void)e;
+    close_sess_note_modal();
     exit_kb_mode();
     // Auto-save pending tag before leaving the screen.
     // Called from an LVGL event callback — the LVGL lock is already held,
@@ -368,6 +455,32 @@ static void on_kb_ready(lv_event_t *e)
 {
     (void)e;
     exit_kb_mode();
+}
+
+static void on_sess_note_btn(lv_event_t *e)
+{
+    (void)e;
+    open_sess_note_modal();
+}
+
+static void on_sess_note_done(lv_event_t *e)
+{
+    (void)e;
+    close_sess_note_modal();
+}
+
+static void on_sess_kb_ready(lv_event_t *e)
+{
+    (void)e;
+    // Keyboard dismissed via Done/Cancel — close the whole modal
+    close_sess_note_modal();
+}
+
+static void on_sess_ta_focused(lv_event_t *e)
+{
+    (void)e;
+    lv_keyboard_set_textarea(s_kb_sess_note, s_ta_sess_note);
+    lv_obj_clear_flag(s_kb_sess_note, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void on_screen_loaded(lv_event_t *e)
@@ -476,50 +589,67 @@ void screen_scan_create(void)
     lv_obj_set_style_text_font(lbl_back, &lv_font_montserrat_22, LV_PART_MAIN);
     lv_obj_center(lbl_back);
 
-    // Row 1: session name — centred between back button and right edge
+    // Row 1: session name — centred between back button and note button
     s_lbl_sess_name = lv_label_create(s_hdr);
     lv_label_set_text(s_lbl_sess_name, "");
     lv_label_set_long_mode(s_lbl_sess_name, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(s_lbl_sess_name, 390);
-    lv_obj_set_style_text_font(s_lbl_sess_name, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_set_width(s_lbl_sess_name, 362);   // 56..418 — leaves room for note button
+    lv_obj_set_style_text_font(s_lbl_sess_name, &lv_font_montserrat_20, LV_PART_MAIN);
     lv_obj_set_style_text_align(s_lbl_sess_name, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_obj_set_pos(s_lbl_sess_name, 56, 6);
 
-    // Row 2: clock (left) + tag count (right)
+    // Row 2: clock (left) + tag count (right, before note button)
     s_lbl_clock = lv_label_create(s_hdr);
     lv_label_set_text(s_lbl_clock, "-- --- --:--");
-    lv_obj_set_style_text_font(s_lbl_clock, &lv_font_montserrat_14, LV_PART_MAIN);
-    lv_obj_set_pos(s_lbl_clock, 58, 38);
+    lv_obj_set_style_text_font(s_lbl_clock, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_set_pos(s_lbl_clock, 58, 36);
 
     s_lbl_hdr_count = lv_label_create(s_hdr);
     lv_label_set_text(s_lbl_hdr_count, "0");
-    lv_obj_set_width(s_lbl_hdr_count, 100);
-    lv_obj_set_style_text_font(s_lbl_hdr_count, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_width(s_lbl_hdr_count, 80);
+    lv_obj_set_style_text_font(s_lbl_hdr_count, &lv_font_montserrat_18, LV_PART_MAIN);
     lv_obj_set_style_text_align(s_lbl_hdr_count, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
-    lv_obj_set_pos(s_lbl_hdr_count, 374, 38);  // 480 - 100 - 6
+    lv_obj_set_pos(s_lbl_hdr_count, 336, 36);   // ends at 416, before note button
 
-    // ── EID area (y=60 h=58) — 2 centred rows ─────────────────────────────────
-    lv_obj_t *eid_row = lv_obj_create(s_scr);
-    lv_obj_set_size(eid_row, 480, 58);
-    lv_obj_set_pos(eid_row, 0, 60);
-    lv_obj_clear_flag(eid_row, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_border_width(eid_row, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(eid_row, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(eid_row, 0, LV_PART_MAIN);
+    // Note (pencil) button — top-right, mirrors the back button dimensions
+    s_btn_sess_note = lv_btn_create(s_hdr);
+    lv_obj_set_size(s_btn_sess_note, 52, 56);
+    lv_obj_align(s_btn_sess_note, LV_ALIGN_RIGHT_MID, -2, 0);
+    lv_obj_set_style_border_width(s_btn_sess_note, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_btn_sess_note, 4, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_btn_sess_note, 0, LV_PART_MAIN);
+    lv_obj_set_ext_click_area(s_btn_sess_note, 6);
+    lv_obj_add_event_cb(s_btn_sess_note, on_sess_note_btn, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lbl_note_icon = lv_label_create(s_btn_sess_note);
+    lv_label_set_text(lbl_note_icon, LV_SYMBOL_EDIT);
+    lv_obj_set_style_text_font(lbl_note_icon, &lv_font_montserrat_22, LV_PART_MAIN);
+    lv_obj_center(lbl_note_icon);
+    lv_obj_add_flag(s_btn_sess_note, LV_OBJ_FLAG_HIDDEN);  // hidden until session set
+
+    // ── EID area — size/position set dynamically in show_data_panel_for_type() ──
+    // Default matches input-session layout (y=60 h=70); overridden on first
+    // call to screen_scan_set_session().
+    s_eid_row = lv_obj_create(s_scr);
+    lv_obj_set_size(s_eid_row, 480, 70);
+    lv_obj_set_pos(s_eid_row, 0, 60);
+    lv_obj_clear_flag(s_eid_row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_border_width(s_eid_row, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_eid_row, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_eid_row, 0, LV_PART_MAIN);
 
     // Row 1: EID value — centred, larger font
-    s_lbl_eid = lv_label_create(eid_row);
+    s_lbl_eid = lv_label_create(s_eid_row);
     lv_label_set_text(s_lbl_eid, "---");
     lv_obj_set_style_text_font(s_lbl_eid, &lv_font_montserrat_26, LV_PART_MAIN);
-    lv_obj_align(s_lbl_eid, LV_ALIGN_TOP_MID, 0, 2);
+    lv_obj_align(s_lbl_eid, LV_ALIGN_TOP_MID, 0, 6);
 
     // Row 2: status badge — centred
-    s_lbl_status_tag = lv_label_create(eid_row);
+    s_lbl_status_tag = lv_label_create(s_eid_row);
     lv_obj_set_style_text_font(s_lbl_status_tag, &lv_font_montserrat_18, LV_PART_MAIN);
     lv_obj_set_style_radius(s_lbl_status_tag, 8, LV_PART_MAIN);
     lv_obj_set_style_pad_hor(s_lbl_status_tag, 8, LV_PART_MAIN);
     lv_obj_set_style_pad_ver(s_lbl_status_tag, 3, LV_PART_MAIN);
-    lv_obj_align(s_lbl_status_tag, LV_ALIGN_BOTTOM_MID, 0, -2);
+    lv_obj_align(s_lbl_status_tag, LV_ALIGN_BOTTOM_MID, 0, -6);
     set_status_ready();
 
     // ── Data panel (y=118 h=152) ──────────────────────────────────────────────
@@ -550,7 +680,7 @@ void screen_scan_create(void)
     //   [-10](76) gap(17) [-1](76) gap(17) [val](92) gap(17) [+1](76) gap(17) [+10](76)
     //   Total: 4×76 + 92 + 4×17 = 304 + 92 + 68 = 464 ✓
     s_panel_weighing = lv_obj_create(s_data_panel);
-    lv_obj_set_size(s_panel_weighing, 464, 136);
+    lv_obj_set_size(s_panel_weighing, 464, 118);
     lv_obj_set_pos(s_panel_weighing, 0, 0);
     lv_obj_set_style_bg_opa(s_panel_weighing, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_panel_weighing, 0, LV_PART_MAIN);
@@ -567,7 +697,7 @@ void screen_scan_create(void)
 
     // -100 button
     s_btn_w_minus100 = lv_btn_create(s_panel_weighing);
-    lv_obj_set_size(s_btn_w_minus100, 62, 56);
+    lv_obj_set_size(s_btn_w_minus100, 62, 84);
     lv_obj_set_pos(s_btn_w_minus100, 0, 22);
     lv_obj_set_style_radius(s_btn_w_minus100, 4, LV_PART_MAIN);
     lv_obj_set_ext_click_area(s_btn_w_minus100, 10);
@@ -579,7 +709,7 @@ void screen_scan_create(void)
 
     // -10 button
     s_btn_w_minus10 = lv_btn_create(s_panel_weighing);
-    lv_obj_set_size(s_btn_w_minus10, 62, 56);
+    lv_obj_set_size(s_btn_w_minus10, 62, 84);
     lv_obj_set_pos(s_btn_w_minus10, 66, 22);
     lv_obj_set_style_radius(s_btn_w_minus10, 4, LV_PART_MAIN);
     lv_obj_set_ext_click_area(s_btn_w_minus10, 10);
@@ -591,7 +721,7 @@ void screen_scan_create(void)
 
     // -1 button
     s_btn_w_minus = lv_btn_create(s_panel_weighing);
-    lv_obj_set_size(s_btn_w_minus, 62, 56);
+    lv_obj_set_size(s_btn_w_minus, 62, 84);
     lv_obj_set_pos(s_btn_w_minus, 132, 22);
     lv_obj_set_style_radius(s_btn_w_minus, 4, LV_PART_MAIN);
     lv_obj_set_ext_click_area(s_btn_w_minus, 10);
@@ -603,7 +733,7 @@ void screen_scan_create(void)
 
     // Value display
     lv_obj_t *val_box = lv_obj_create(s_panel_weighing);
-    lv_obj_set_size(val_box, 68, 56);
+    lv_obj_set_size(val_box, 68, 84);
     lv_obj_set_pos(val_box, 198, 22);
     lv_obj_set_style_border_width(val_box, 1, LV_PART_MAIN);
     lv_obj_set_style_radius(val_box, 4, LV_PART_MAIN);
@@ -617,7 +747,7 @@ void screen_scan_create(void)
 
     // +1 button
     s_btn_w_plus = lv_btn_create(s_panel_weighing);
-    lv_obj_set_size(s_btn_w_plus, 62, 56);
+    lv_obj_set_size(s_btn_w_plus, 62, 84);
     lv_obj_set_pos(s_btn_w_plus, 270, 22);
     lv_obj_set_style_radius(s_btn_w_plus, 4, LV_PART_MAIN);
     lv_obj_set_ext_click_area(s_btn_w_plus, 10);
@@ -629,7 +759,7 @@ void screen_scan_create(void)
 
     // +10 button
     s_btn_w_plus10 = lv_btn_create(s_panel_weighing);
-    lv_obj_set_size(s_btn_w_plus10, 62, 56);
+    lv_obj_set_size(s_btn_w_plus10, 62, 84);
     lv_obj_set_pos(s_btn_w_plus10, 336, 22);
     lv_obj_set_style_radius(s_btn_w_plus10, 4, LV_PART_MAIN);
     lv_obj_set_ext_click_area(s_btn_w_plus10, 10);
@@ -641,7 +771,7 @@ void screen_scan_create(void)
 
     // +100 button
     s_btn_w_plus100 = lv_btn_create(s_panel_weighing);
-    lv_obj_set_size(s_btn_w_plus100, 62, 56);
+    lv_obj_set_size(s_btn_w_plus100, 62, 84);
     lv_obj_set_pos(s_btn_w_plus100, 402, 22);
     lv_obj_set_style_radius(s_btn_w_plus100, 4, LV_PART_MAIN);
     lv_obj_set_ext_click_area(s_btn_w_plus100, 10);
@@ -652,26 +782,31 @@ void screen_scan_create(void)
     lv_obj_center(lbl_p100);
 
     // ── Panel: Pregnancy ───────────────────────────────────────────────────────
+    // 2 rows × 3 buttons filling the full 118px panel height (no title label).
+    // 3 × 150px with 7px gaps = 464px wide ✓
+    // Row 1 (y=0,  h=56): Unknown | Not pregnant | Rejected
+    // Row 2 (y=62, h=56): Small   | Medium       | Big
     s_panel_preg = lv_obj_create(s_data_panel);
-    lv_obj_set_size(s_panel_preg, 464, 78);
+    lv_obj_set_size(s_panel_preg, 464, 118);
     lv_obj_set_pos(s_panel_preg, 0, 0);
     lv_obj_set_style_bg_opa(s_panel_preg, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_panel_preg, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(s_panel_preg, 0, LV_PART_MAIN);
     lv_obj_clear_flag(s_panel_preg, LV_OBJ_FLAG_SCROLLABLE);
 
-    s_lbl_preg_title = lv_label_create(s_panel_preg);
-    lv_label_set_text(s_lbl_preg_title, i18n_t(STR_PREG_RESULT));
-    lv_obj_set_style_text_font(s_lbl_preg_title, &lv_font_montserrat_18, LV_PART_MAIN);
-    lv_obj_set_pos(s_lbl_preg_title, 0, 0);
-
-    const char *preg_labels[] = {
-        i18n_t(STR_PREG_UNKNOWN), i18n_t(STR_PREG_YES), i18n_t(STR_PREG_NO)
+    static const char * const s_preg_str[6] = {
+        STR_PREG_UNKNOWN, STR_PREG_NO, STR_PREG_REJECTED,
+        STR_PREG_SMALL,   STR_PREG_MEDIUM, STR_PREG_BIG,
     };
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 6; i++) {
+        int col = i % 3;
+        int row = i / 3;
+        int x   = col * 157;
+        int y   = row * 62;
         s_btn_preg[i] = make_radio_btn(s_panel_preg,
-            4 + i * 154, 26, 146, 44,
-            preg_labels[i], on_preg_btn, (void *)(intptr_t)i,
+            x, y, 150, 56,
+            i18n_t(s_preg_str[i]), on_preg_btn,
+            (void *)(intptr_t)s_preg_btn_val[i],
             &s_lbl_preg[i]);
     }
     update_preg_buttons();
@@ -728,10 +863,10 @@ void screen_scan_create(void)
     lv_obj_add_flag(s_panel_tb,       LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_panel_vax,      LV_OBJ_FLAG_HIDDEN);
 
-    // ── Note textarea (y=270 h=50, bottom of screen) ─────────────────────────
+    // ── Note textarea (y=264 h=50, 6px clear from screen bottom) ─────────────
     s_ta_note = lv_textarea_create(s_scr);
     lv_obj_set_size(s_ta_note, 464, 50);
-    lv_obj_set_pos(s_ta_note, 8, 270);
+    lv_obj_set_pos(s_ta_note, 8, 264);
     lv_textarea_set_one_line(s_ta_note, false);
     lv_textarea_set_max_length(s_ta_note, SESSION_NOTE_MAX - 1);
     lv_textarea_set_placeholder_text(s_ta_note, i18n_t(STR_NOTE_PLACEHOLDER));
@@ -741,6 +876,17 @@ void screen_scan_create(void)
     lv_obj_set_ext_click_area(s_ta_note, 15);
     lv_obj_add_event_cb(s_ta_note, on_note_focused, LV_EVENT_FOCUSED, NULL);
     lv_obj_add_event_cb(s_ta_note, on_note_clicked, LV_EVENT_CLICKED, NULL);
+
+    // ── Compact vaccine label (Vaccination sessions, no-input layout) ─────────
+    // Position is set dynamically in show_data_panel_for_type(); hidden until needed.
+    s_lbl_vax_compact = lv_label_create(s_scr);
+    lv_label_set_text(s_lbl_vax_compact, "—");
+    lv_label_set_long_mode(s_lbl_vax_compact, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(s_lbl_vax_compact, 460);
+    lv_obj_set_style_text_font(s_lbl_vax_compact, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_set_style_text_align(s_lbl_vax_compact, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_pos(s_lbl_vax_compact, 10, 202);
+    lv_obj_add_flag(s_lbl_vax_compact, LV_OBJ_FLAG_HIDDEN);
 
     // ── "Note" title shown above textarea during keyboard mode ────────────────
     s_lbl_kb_note_title = lv_label_create(s_scr);
@@ -760,7 +906,7 @@ void screen_scan_create(void)
 
     // Objects hidden during keyboard mode
     s_hide_in_kb[0] = s_hdr;
-    s_hide_in_kb[1] = eid_row;
+    s_hide_in_kb[1] = s_eid_row;
     s_hide_in_kb[2] = s_data_panel;
 
     // ── No-session overlay ────────────────────────────────────────────────────
@@ -800,6 +946,58 @@ void screen_scan_create(void)
     lv_obj_add_flag(s_flash_overlay, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(s_flash_overlay, LV_OBJ_FLAG_CLICKABLE);
 
+    // ── Session note modal (full-screen overlay, z-order top) ─────────────────
+    // Layout (320px tall):
+    //   y=  0..50  header row: "Session note" label + Done button
+    //   y= 54..119  textarea (65px, ~3 lines of text)
+    //   y=120..320  keyboard (200px)
+    s_sess_note_overlay = lv_obj_create(s_scr);
+    lv_obj_set_size(s_sess_note_overlay, 480, 320);
+    lv_obj_set_pos(s_sess_note_overlay, 0, 0);
+    lv_obj_clear_flag(s_sess_note_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_radius(s_sess_note_overlay, 0, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_sess_note_overlay, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_sess_note_overlay, 0, LV_PART_MAIN);
+    lv_obj_add_flag(s_sess_note_overlay, LV_OBJ_FLAG_HIDDEN);
+
+    // "Session note" title label
+    lv_obj_t *lbl_sn_title = lv_label_create(s_sess_note_overlay);
+    lv_label_set_text(lbl_sn_title, i18n_t(STR_SESSION_NOTE));
+    lv_obj_set_style_text_font(lbl_sn_title, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_pos(lbl_sn_title, 12, 14);
+
+    // Done button
+    lv_obj_t *btn_sn_done = lv_btn_create(s_sess_note_overlay);
+    lv_obj_set_size(btn_sn_done, 100, 40);
+    lv_obj_set_pos(btn_sn_done, 372, 5);
+    lv_obj_set_style_radius(btn_sn_done, 6, LV_PART_MAIN);
+    lv_obj_set_ext_click_area(btn_sn_done, 8);
+    lv_obj_add_event_cb(btn_sn_done, on_sess_note_done, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lbl_sn_done = lv_label_create(btn_sn_done);
+    lv_label_set_text(lbl_sn_done, i18n_t(STR_BTN_OK));
+    lv_obj_set_style_text_font(lbl_sn_done, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_center(lbl_sn_done);
+
+    // Textarea
+    s_ta_sess_note = lv_textarea_create(s_sess_note_overlay);
+    lv_obj_set_size(s_ta_sess_note, 464, 65);
+    lv_obj_set_pos(s_ta_sess_note, 8, 54);
+    lv_textarea_set_one_line(s_ta_sess_note, false);
+    lv_textarea_set_max_length(s_ta_sess_note, SESSION_NOTE_MAX - 1);
+    lv_textarea_set_placeholder_text(s_ta_sess_note, i18n_t(STR_SESSION_NOTE_PLACEHOLDER));
+    lv_obj_set_scrollbar_mode(s_ta_sess_note, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_style_text_font(s_ta_sess_note, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_add_event_cb(s_ta_sess_note, on_sess_ta_focused, LV_EVENT_FOCUSED, NULL);
+    lv_obj_add_event_cb(s_ta_sess_note, on_sess_ta_focused, LV_EVENT_CLICKED, NULL);
+
+    // Keyboard
+    s_kb_sess_note = lv_keyboard_create(s_sess_note_overlay);
+    lv_obj_set_size(s_kb_sess_note, 480, 200);
+    lv_obj_align(s_kb_sess_note, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_text_font(s_kb_sess_note, &lv_font_montserrat_22, LV_PART_ITEMS);
+    lv_obj_add_event_cb(s_kb_sess_note, on_sess_kb_ready, LV_EVENT_READY,  NULL);
+    lv_obj_add_event_cb(s_kb_sess_note, on_sess_kb_ready, LV_EVENT_CANCEL, NULL);
+
     // ── Clock timer ───────────────────────────────────────────────────────────
     s_clock_timer = lv_timer_create(clock_tick_cb, 1000, NULL);
     clock_tick_cb(NULL);
@@ -829,15 +1027,19 @@ void screen_scan_set_session(const session_meta_t *meta)
             update_weight_label();
         }
         lv_obj_add_flag(s_no_session_panel, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(s_data_panel, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(s_ta_note,    LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(s_ta_note, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(s_btn_sess_note, LV_OBJ_FLAG_HIDDEN);
+        // show_data_panel_for_type() handles data panel + eid_row visibility/position
         show_data_panel_for_type(meta->type);
         populate_vax_panel();
     } else {
         s_has_session = false;
+        close_sess_note_modal();
         lv_obj_clear_flag(s_no_session_panel, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(s_data_panel, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(s_ta_note,    LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_data_panel,       LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_ta_note,          LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_lbl_vax_compact,  LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(s_btn_sess_note,    LV_OBJ_FLAG_HIDDEN);
     }
     update_session_bar();
     screen_scan_clear_pending();
@@ -1014,15 +1216,19 @@ void screen_scan_refresh_language(void)
 {
     lv_label_set_text(s_lbl_no_session,      i18n_t(STR_SCAN_NO_SESSION));
     lv_label_set_text(s_lbl_btn_go_sessions, i18n_t(STR_SESSION_TITLE));
-    lv_textarea_set_placeholder_text(s_ta_note, i18n_t(STR_NOTE_PLACEHOLDER));
+    lv_textarea_set_placeholder_text(s_ta_note,       i18n_t(STR_NOTE_PLACEHOLDER));
+    lv_textarea_set_placeholder_text(s_ta_sess_note,  i18n_t(STR_SESSION_NOTE_PLACEHOLDER));
     lv_label_set_text(s_lbl_weight_title,    i18n_t(STR_WEIGHT_KG));
-    lv_label_set_text(s_lbl_preg_title,      i18n_t(STR_PREG_RESULT));
     lv_label_set_text(s_lbl_tb_title,        i18n_t(STR_TB_RESULT));
     lv_label_set_text(s_lbl_vax_title,       i18n_t(STR_SESSION_SELECT_VAX));
 
+    // Display order matches s_preg_btn_val[]: Unknown, No, Rejected, Small, Medium, Big
     lv_label_set_text(s_lbl_preg[0], i18n_t(STR_PREG_UNKNOWN));
-    lv_label_set_text(s_lbl_preg[1], i18n_t(STR_PREG_YES));
-    lv_label_set_text(s_lbl_preg[2], i18n_t(STR_PREG_NO));
+    lv_label_set_text(s_lbl_preg[1], i18n_t(STR_PREG_NO));
+    lv_label_set_text(s_lbl_preg[2], i18n_t(STR_PREG_REJECTED));
+    lv_label_set_text(s_lbl_preg[3], i18n_t(STR_PREG_SMALL));
+    lv_label_set_text(s_lbl_preg[4], i18n_t(STR_PREG_MEDIUM));
+    lv_label_set_text(s_lbl_preg[5], i18n_t(STR_PREG_BIG));
 
     lv_label_set_text(s_lbl_tb[0], i18n_t(STR_TB_INCONCLUSIVE));
     lv_label_set_text(s_lbl_tb[1], i18n_t(STR_TB_POSITIVE));

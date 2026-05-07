@@ -24,6 +24,9 @@ fn control_uuid() -> Uuid {
 fn session_data_uuid() -> Uuid {
     Uuid::parse_str("4C494C4F-434F-5753-0005-000000000000").unwrap()
 }
+fn session_meta_uuid() -> Uuid {
+    Uuid::parse_str("4C494C4F-434F-5753-0006-000000000000").unwrap()
+}
 
 // ---------------------------------------------------------------------------
 // Enum helpers — convert handheld integer values to strings
@@ -71,6 +74,19 @@ pub struct HeldSession {
     pub count: u32,
     pub ts: u64,
     pub synced: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionMeta {
+    pub id: u32,
+    pub device_id: String,
+    pub name: String,
+    pub session_type: u8,
+    pub status: u8,
+    pub created_at: i64,
+    pub tag_count: u32,
+    pub synced: bool,
+    pub note: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -334,6 +350,61 @@ pub async fn read_session_data(
     }
 
     Ok(all)
+}
+
+// ---------------------------------------------------------------------------
+// Read session metadata
+// Handheld sends: {"id":1,"device_id":"AA:BB:CC:DD:EE:FF","name":"...","type":1,
+//                  "status":0,"created_at":1745000000,"tag_count":5,"synced":0,"note":"..."}
+// ---------------------------------------------------------------------------
+
+pub async fn read_session_meta(conn: &BleConn, session_id: u32) -> Result<SessionMeta, String> {
+    #[derive(Deserialize)]
+    struct Raw {
+        id: u32,
+        device_id: String,
+        name: String,
+        #[serde(rename = "type")]
+        session_type: u8,
+        status: u8,
+        created_at: i64,
+        tag_count: u32,
+        synced: u8,
+        #[serde(default)]
+        note: String,
+    }
+
+    let char = conn
+        .chars
+        .get(&session_meta_uuid())
+        .ok_or("SESSION_META characteristic not found")?;
+
+    // Select the session (also resets data offset on the handheld)
+    send_control(conn, &serde_json::json!({"cmd": "select", "id": session_id})).await?;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let raw_bytes = conn
+        .peripheral
+        .read(char)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let raw: Raw = serde_json::from_slice(&raw_bytes).map_err(|e| {
+        let preview = String::from_utf8_lossy(&raw_bytes[..raw_bytes.len().min(120)]);
+        format!("SESSION_META parse error: {e} (preview: {preview})")
+    })?;
+
+    Ok(SessionMeta {
+        id: raw.id,
+        device_id: raw.device_id,
+        name: raw.name,
+        session_type: raw.session_type,
+        status: raw.status,
+        created_at: raw.created_at,
+        tag_count: raw.tag_count,
+        synced: raw.synced != 0,
+        note: raw.note,
+    })
 }
 
 // ---------------------------------------------------------------------------

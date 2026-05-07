@@ -2,6 +2,7 @@
   "nav": {
     "animals": "Animales",
     "tags": "Caravanas",
+    "sessions": "Sesiones",
     "sync": "Sincronizar"
   },
   "tags": {
@@ -65,9 +66,12 @@
     "result": "Resultado",
     "checked_at": "Fecha de control",
     "due_date": "Fecha probable de parto",
-    "pregnant": "Gestante",
-    "not_pregnant": "Vacia",
     "unknown": "Desconocido",
+    "not_pregnant": "No gestante",
+    "small_pregnant": "Preñada pequeña",
+    "medium_pregnant": "Preñada mediana",
+    "big_pregnant": "Preñada grande",
+    "rejected": "Descarte",
     "notes": "Notas"
   },
   "tb_test": {
@@ -123,6 +127,35 @@
     "register_tag": "Registrar",
     "registered_ok": "Registrada",
     "no_unregistered": "Todas las caravanas son conocidas."
+  },
+  "sessions": {
+    "title": "Sesiones",
+    "no_sessions": "No hay sesiones sincronizadas.",
+    "type_general": "General",
+    "type_weighing": "Pesaje",
+    "type_vaccination": "Vacunacion",
+    "type_pregnancy": "Prenez",
+    "type_tb_test": "Test TB",
+    "status_open": "Abierta",
+    "status_closed": "Cerrada",
+    "records": "registros",
+    "farm": "Campo",
+    "operator": "Operador",
+    "comments": "Comentarios",
+    "handheld_note": "Nota del handheld",
+    "session_note": "Nota de sesion",
+    "edit_session": "Editar sesion",
+    "delete_session": "Eliminar sesion",
+    "delete_confirm": "¿Eliminar esta sesion y todos sus registros permanentemente?",
+    "records_title": "Animales escaneados",
+    "col_eid": "EID",
+    "col_animal": "Animal",
+    "col_time": "Hora",
+    "col_data": "Datos",
+    "col_note": "Nota",
+    "unknown_animal": "Desconocido",
+    "register_animal": "Registrar",
+    "saved": "Guardado"
   },
   "common": {
     "save": "Guardar",

@@ -102,8 +102,11 @@ static const struct { const char *en; const char *es; } s_table[] = {
     // Pregnancy
     { "Pregnancy",                  "Prenez" },
     { "Unknown",                    "Desconocido" },
-    { "Pregnant",                   "Gestante" },
     { "Not pregnant",               "No gestante" },
+    { "Small",                      "Preñada pequeña" },
+    { "Medium",                     "Preñada mediana" },
+    { "Big",                        "Preñada grande" },
+    { "Rejected",                   "Descarte" },
     // TB Test
     { "TB Test",                    "Test tuberculosis" },
     { "Positive",                   "Positivo" },
@@ -111,7 +114,9 @@ static const struct { const char *en; const char *es; } s_table[] = {
     { "Inconclusive",               "No concluyente" },
     // Notes
     { "Note",                       "Nota" },
-    { "Add note...",                "Agregar nota..." },
+    { "Add animal note...",          "Agregar nota del animal..." },
+    { "Session note",               "Nota de sesion" },
+    { "Add session note...",        "Agregar nota de sesion..." },
     // Vaccines settings
     { "Vaccines",                   "Vacunas" },
     { "Add Vaccine",                "Agregar vacuna" },

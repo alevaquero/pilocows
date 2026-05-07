@@ -111,8 +111,11 @@
 // Pregnancy
 #define STR_PREG_RESULT             "Prenez"
 #define STR_PREG_UNKNOWN            "Desconocido"
-#define STR_PREG_YES                "Gestante"
 #define STR_PREG_NO                 "No gestante"
+#define STR_PREG_SMALL              "Preñada pequeña"
+#define STR_PREG_MEDIUM             "Preñada mediana"
+#define STR_PREG_BIG                "Preñada grande"
+#define STR_PREG_REJECTED           "Descarte"
 
 // TB Test
 #define STR_TB_RESULT               "Test tuberculosis"
@@ -122,7 +125,9 @@
 
 // Notes
 #define STR_NOTE                    "Nota"
-#define STR_NOTE_PLACEHOLDER        "Agregar nota..."
+#define STR_NOTE_PLACEHOLDER        "Agregar nota del animal..."
+#define STR_SESSION_NOTE            "Nota de sesion"
+#define STR_SESSION_NOTE_PLACEHOLDER "Agregar nota de sesion..."
 
 // Vaccines settings
 #define STR_SETTINGS_VACCINES       "Vacunas"

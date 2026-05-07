@@ -22,6 +22,7 @@ static const char *TAG = "ble";
 // DEVICE_STATUS:   4C494C4F-434F-5753-0003-000000000000  (read — JSON status)
 // CONTROL:         4C494C4F-434F-5753-0004-000000000000  (write — JSON commands)
 // SESSION_DATA:    4C494C4F-434F-5753-0005-000000000000  (read — JSON records for selected session)
+// SESSION_META:    4C494C4F-434F-5753-0006-000000000000  (read — JSON metadata for selected session)
 
 static const ble_uuid128_t UUID_SERVICE = BLE_UUID128_INIT(
     0x00,0x00,0x00,0x00, 0x00,0x00, 0x01,0x00,
@@ -43,6 +44,10 @@ static const ble_uuid128_t UUID_SESSION_DATA = BLE_UUID128_INIT(
     0x00,0x00,0x00,0x00, 0x00,0x00, 0x05,0x00,
     0x53,0x57, 0x4F,0x43, 0x4F,0x4C, 0x49,0x4C
 );
+static const ble_uuid128_t UUID_SESSION_META = BLE_UUID128_INIT(
+    0x00,0x00,0x00,0x00, 0x00,0x00, 0x06,0x00,
+    0x53,0x57, 0x4F,0x43, 0x4F,0x4C, 0x49,0x4C
+);
 
 static ble_command_callback_t  s_cmd_callback        = NULL;
 static ble_sync_status_cb_t    s_status_cb           = NULL;
@@ -52,6 +57,7 @@ static struct ble_npl_callout  s_adv_start_co;
 static bool                    s_adv_enabled          = false;
 static uint16_t                s_session_list_handle  = 0;
 static uint16_t                s_session_data_handle  = 0;
+static uint16_t                s_session_meta_handle  = 0;
 static uint16_t                s_status_handle        = 0;
 static uint32_t                s_selected_session_id  = 0; // set by CONTROL "select"
 static uint32_t                s_list_offset          = 0; // set by CONTROL "list_page"
@@ -208,9 +214,15 @@ static int gatt_session_data_cb(uint16_t conn_handle, uint16_t attr_handle,
                 ",\"vaccines\":\"%s\"", vax_names);
             break;
         case SESSION_TYPE_PREGNANCY: {
-            const char *result = r->data[0] == PREGNANCY_YES ? "pregnant"
-                               : r->data[0] == PREGNANCY_NO  ? "not_pregnant"
-                               : "unknown";
+            const char *result;
+            switch ((pregnancy_result_t)r->data[0]) {
+                case PREGNANCY_NO:       result = "not_pregnant";    break;
+                case PREGNANCY_SMALL:    result = "small_pregnant";  break;
+                case PREGNANCY_MEDIUM:   result = "medium_pregnant"; break;
+                case PREGNANCY_BIG:      result = "big_pregnant";    break;
+                case PREGNANCY_REJECTED: result = "rejected";        break;
+                default:                 result = "unknown";         break;
+            }
             pos += snprintf(json_buf + pos, sizeof(json_buf) - pos,
                 ",\"pregnancy\":\"%s\"", result);
             break;
@@ -327,6 +339,57 @@ static int gatt_control_cb(uint16_t conn_handle, uint16_t attr_handle,
     return 0;
 }
 
+// SESSION_META: returns full JSON metadata for the selected session, including
+// the session note and the device BT address as device_id.
+// The selected session is set via CONTROL {"cmd":"select","id":N} first.
+// Format: {"id":1,"device_id":"AA:BB:CC:DD:EE:FF","name":"...","type":1,
+//          "status":0,"created_at":1745000000,"tag_count":5,"synced":0,
+//          "note":"..."}
+static int gatt_session_meta_cb(uint16_t conn_handle, uint16_t attr_handle,
+                                struct ble_gatt_access_ctxt *ctxt, void *arg)
+{
+    if (ctxt->op != BLE_GATT_ACCESS_OP_READ_CHR) return BLE_ATT_ERR_REQ_NOT_SUPPORTED;
+
+    if (s_selected_session_id == 0) {
+        return os_mbuf_append(ctxt->om, "{}", 2) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+
+    session_meta_t meta;
+    if (session_get_meta(s_selected_session_id, &meta) != ESP_OK) {
+        return os_mbuf_append(ctxt->om, "{}", 2) == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+
+    // Read device BT address
+    char device_id[18] = "00:00:00:00:00:00";
+    uint8_t own_addr_type;
+    uint8_t addr[6];
+    if (ble_hs_id_infer_auto(0, &own_addr_type) == 0 &&
+        ble_hs_id_copy_addr(own_addr_type, addr, NULL) == 0) {
+        snprintf(device_id, sizeof(device_id),
+                 "%02X:%02X:%02X:%02X:%02X:%02X",
+                 addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
+    }
+
+    static char json_buf[512];
+    char esc_name[72], esc_note[160];
+    json_escape(esc_name, sizeof(esc_name), meta.name, sizeof(meta.name));
+    json_escape(esc_note, sizeof(esc_note), meta.note, sizeof(meta.note));
+
+    int pos = snprintf(json_buf, sizeof(json_buf),
+        "{\"id\":%lu,\"device_id\":\"%s\",\"name\":\"%s\","
+        "\"type\":%u,\"status\":%u,\"created_at\":%ld,"
+        "\"tag_count\":%lu,\"synced\":%d,\"note\":\"%s\"}",
+        (unsigned long)meta.id, device_id, esc_name,
+        (unsigned)meta.type, (unsigned)meta.status, (long)meta.created_at,
+        (unsigned long)meta.tag_count, meta.synced ? 1 : 0,
+        esc_note);
+
+    ESP_LOGI(TAG, "SESSION_META id=%lu (%d bytes)", (unsigned long)meta.id, pos);
+
+    return os_mbuf_append(ctxt->om, json_buf, (uint16_t)pos) == 0
+           ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+}
+
 // ---------------------------------------------------------------------------
 // GATT service table
 // ---------------------------------------------------------------------------
@@ -357,6 +420,12 @@ static const struct ble_gatt_svc_def s_gatt_svcs[] = {
                 .access_cb  = gatt_session_data_cb,
                 .flags      = BLE_GATT_CHR_F_READ,
                 .val_handle = &s_session_data_handle,
+            },
+            {   // SESSION_META
+                .uuid       = &UUID_SESSION_META.u,
+                .access_cb  = gatt_session_meta_cb,
+                .flags      = BLE_GATT_CHR_F_READ,
+                .val_handle = &s_session_meta_handle,
             },
             { 0 }
         },

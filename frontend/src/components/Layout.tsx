@@ -56,6 +56,7 @@ export default function Layout() {
         <nav className="flex-1 px-3 py-4 space-y-1">
           <NavItem to="/animals" label={t('nav.animals')} />
           <NavItem to="/tags" label={t('nav.tags')} />
+          <NavItem to="/sessions" label={t('nav.sessions')} />
           <NavItem to="/sync" label={t('nav.sync')} />
         </nav>
 

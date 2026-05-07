@@ -184,9 +184,8 @@ static void on_reopen(lv_event_t *e)
     if (s_selected_id == 0) return;
     session_set_status(s_selected_id, SESSION_STATUS_OPEN);
     session_set_active(s_selected_id);
-    hide_detail();
-    rebuild_list();
     ESP_LOGI(TAG, "Reopened session %" PRIu32, s_selected_id);
+    ui_manager_show(SCREEN_SCAN);
 }
 
 static void on_set_current(lv_event_t *e)

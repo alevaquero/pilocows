@@ -111,8 +111,11 @@
 // Pregnancy
 #define STR_PREG_RESULT             "Pregnancy"
 #define STR_PREG_UNKNOWN            "Unknown"
-#define STR_PREG_YES                "Pregnant"
 #define STR_PREG_NO                 "Not pregnant"
+#define STR_PREG_SMALL              "Small"
+#define STR_PREG_MEDIUM             "Medium"
+#define STR_PREG_BIG                "Big"
+#define STR_PREG_REJECTED           "Rejected"
 
 // TB Test
 #define STR_TB_RESULT               "TB Test"
@@ -122,7 +125,9 @@
 
 // Notes
 #define STR_NOTE                    "Note"
-#define STR_NOTE_PLACEHOLDER        "Add note..."
+#define STR_NOTE_PLACEHOLDER        "Add animal note..."
+#define STR_SESSION_NOTE            "Session note"
+#define STR_SESSION_NOTE_PLACEHOLDER "Add session note..."
 
 // Vaccines settings
 #define STR_SETTINGS_VACCINES       "Vaccines"
