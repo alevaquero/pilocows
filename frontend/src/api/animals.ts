@@ -5,7 +5,6 @@ export interface Animal {
   id: number
   tag_id: number
   tag_number: string
-  name: string
   breed: string
   category: string
   sex: string
@@ -26,7 +25,6 @@ export interface AnimalProfile extends Animal {
 
 export interface CreateAnimalPayload {
   tag_id: number
-  name: string
   breed: string
   category: string
   sex: string
@@ -35,7 +33,6 @@ export interface CreateAnimalPayload {
 }
 
 export interface PatchAnimalPayload {
-  name?: string
   breed?: string
   category?: string
   sex?: string

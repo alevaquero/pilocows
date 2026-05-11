@@ -34,6 +34,10 @@ static SemaphoreHandle_t s_mutex        = NULL;
 #define LOCK()   xSemaphoreTake(s_mutex, portMAX_DELAY)
 #define UNLOCK() xSemaphoreGive(s_mutex)
 
+// Internal deletion marker stored in session_meta_t._deleted.
+// 0 = normal session; anything else = tombstoned.
+#define SESS_DELETED ((uint8_t)0x01)
+
 // ─────────────────────────────────────────────────────────────────────────────
 // NVS helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -141,7 +145,7 @@ esp_err_t session_storage_init(void)
         session_meta_t m;
         if (meta_read(saved_id, &m) == ESP_OK &&
             m.id == saved_id &&
-            m.status == SESSION_STATUS_OPEN) {
+            m._deleted == 0) {
             s_active_id  = saved_id;
             s_active_cache = m;
             s_cache_valid  = true;
@@ -174,7 +178,7 @@ esp_err_t session_create(session_type_t type, const char *name,
     memset(&m, 0, sizeof(m));
     m.id         = new_id;
     m.type       = (uint8_t)type;
-    m.status     = SESSION_STATUS_OPEN;
+    m._deleted   = 0;
     m.created_at = time(NULL);
     m.tag_count  = 0;
 
@@ -217,7 +221,7 @@ esp_err_t session_set_active(uint32_t id)
     esp_err_t err = meta_read(id, &m);
     if (err != ESP_OK)                          { UNLOCK(); return err; }
     if (m.id != id)                             { UNLOCK(); return ESP_ERR_NOT_FOUND; }
-    if (m.status != SESSION_STATUS_OPEN)        { UNLOCK(); return ESP_ERR_INVALID_STATE; }
+    if (m._deleted != 0)                        { UNLOCK(); return ESP_ERR_NOT_FOUND; }
 
     s_active_id    = id;
     s_active_cache = m;
@@ -238,32 +242,6 @@ void session_clear_active(void)
     UNLOCK();
 }
 
-esp_err_t session_set_status(uint32_t id, uint8_t status)
-{
-    LOCK();
-    session_meta_t m;
-    esp_err_t err = meta_read(id, &m);
-    if (err != ESP_OK || m.id != id) { UNLOCK(); return ESP_ERR_NOT_FOUND; }
-
-    m.status = status;
-    err = meta_write(&m);
-
-    // If this was the active session and we closed it, clear active pointer
-    if (err == ESP_OK && id == s_active_id) {
-        if (status == SESSION_STATUS_CLOSED || status == SESSION_STATUS_DELETED) {
-            s_active_id   = 0;
-            s_cache_valid = false;
-            nvs_set_u32(NVS_ACTIVE_SESS, 0);
-        } else {
-            // Re-opened: refresh cache
-            s_active_cache = m;
-            s_cache_valid  = true;
-        }
-    }
-
-    UNLOCK();
-    return err;
-}
 
 bool session_get_active(session_meta_t *out)
 {
@@ -290,7 +268,7 @@ int session_list_all(session_meta_t *out, int max_count)
 
     session_meta_t m;
     while (fread(&m, sizeof(session_meta_t), 1, f) == 1) {
-        if (m.id != 0 && m.status != SESSION_STATUS_DELETED) {
+        if (m.id != 0 && m._deleted == 0) {
             if (total < 50) buf[total++] = m;
         }
     }
@@ -331,8 +309,8 @@ esp_err_t session_delete(uint32_t id)
     if (err != ESP_OK || m.id != id) { UNLOCK(); return ESP_ERR_NOT_FOUND; }
 
     // Tombstone the meta record — keep m.id intact so meta_write can compute
-    // the correct file offset; session_list_all already filters STATUS_DELETED.
-    m.status = SESSION_STATUS_DELETED;
+    // the correct file offset; session_list_all already filters by _deleted.
+    m._deleted = SESS_DELETED;
     err = meta_write(&m);
 
     // Delete the record file
@@ -351,7 +329,7 @@ esp_err_t session_get_meta(uint32_t id, session_meta_t *out)
     if (!out || id == 0) return ESP_ERR_INVALID_ARG;
     LOCK();
     esp_err_t err = meta_read(id, out);
-    if (err == ESP_OK && (out->id != id || out->status == SESSION_STATUS_DELETED)) {
+    if (err == ESP_OK && (out->id != id || out->_deleted != 0)) {
         err = ESP_ERR_NOT_FOUND;
     }
     UNLOCK();
@@ -363,7 +341,7 @@ esp_err_t session_mark_synced(uint32_t id)
     LOCK();
     session_meta_t m;
     esp_err_t err = meta_read(id, &m);
-    if (err != ESP_OK || m.id != id || m.status == SESSION_STATUS_DELETED) {
+    if (err != ESP_OK || m.id != id || m._deleted != 0) {
         UNLOCK();
         return ESP_ERR_NOT_FOUND;
     }
@@ -383,7 +361,7 @@ esp_err_t session_save_note(uint32_t id, const char *note)
     LOCK();
     session_meta_t m;
     esp_err_t err = meta_read(id, &m);
-    if (err != ESP_OK || m.id != id || m.status == SESSION_STATUS_DELETED) {
+    if (err != ESP_OK || m.id != id || m._deleted != 0) {
         UNLOCK();
         return ESP_ERR_NOT_FOUND;
     }
@@ -453,7 +431,6 @@ esp_err_t session_save_record(const tag_record_t *rec)
     LOCK();
 
     if (!s_cache_valid || s_active_id == 0) { UNLOCK(); return ESP_ERR_INVALID_STATE; }
-    if (s_active_cache.status != SESSION_STATUS_OPEN) { UNLOCK(); return ESP_ERR_INVALID_STATE; }
 
     char path[32];
     make_sess_path(s_active_id, path, sizeof(path));

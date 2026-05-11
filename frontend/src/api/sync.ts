@@ -13,7 +13,6 @@ export interface HeldSession {
   id: number
   name: string
   session_type: string
-  status: 'open' | 'closed'
   count: number
   ts: number
   synced: boolean

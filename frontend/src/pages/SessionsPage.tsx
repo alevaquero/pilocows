@@ -88,13 +88,6 @@ function SessionCard({ session: s, onClick }: { session: SessionSummary; onClick
               {s.name || '—'}
             </span>
             <TypeBadge sessionType={s.session_type} />
-            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-              s.status === 0
-                ? 'bg-green-50 text-green-600'
-                : 'bg-slate-100 text-slate-500'
-            }`}>
-              {s.status === 0 ? t('sessions.status_open') : t('sessions.status_closed')}
-            </span>
           </div>
 
           {/* Meta row */}

@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include <stdio.h>
 #include <inttypes.h>
+#include "fonts.h"
 
 static const char *TAG = "scr_sess_list";
 
@@ -25,20 +26,23 @@ static lv_obj_t *s_list;
 static lv_obj_t *s_detail_panel;
 static lv_obj_t *s_lbl_detail_name;
 static lv_obj_t *s_lbl_detail_info;
-static lv_obj_t *s_btn_reopen;
-static lv_obj_t *s_lbl_btn_reopen;
 static lv_obj_t *s_btn_set_current;
 static lv_obj_t *s_lbl_btn_set_current;
-static lv_obj_t *s_btn_close_session;
-static lv_obj_t *s_lbl_btn_close_session;
 static lv_obj_t *s_btn_delete;
 static lv_obj_t *s_lbl_btn_delete;
+static lv_obj_t *s_btn_edit_note;
+static lv_obj_t *s_lbl_btn_edit_note;
 static lv_obj_t *s_btn_detail_cancel;
 static lv_obj_t *s_lbl_btn_detail_cancel;
 
+// ── Note edit modal ────────────────────────────────────────────────────────────
+static lv_obj_t *s_note_overlay;
+static lv_obj_t *s_ta_note_edit;
+static lv_obj_t *s_kb_note_edit;
+
 // Currently selected session in the detail panel
-static uint32_t s_selected_id = 0;
-static uint8_t  s_selected_status = SESSION_STATUS_OPEN;
+static uint32_t s_selected_id   = 0;
+static char     s_selected_note[SESSION_NOTE_MAX] = {0};
 
 static lv_obj_t *s_scr = NULL;
 
@@ -58,31 +62,20 @@ static const char *type_en_str(uint8_t type)
     }
 }
 
+static void open_note_modal(void);
+static void close_note_modal(void);
+
 static void show_detail(const session_meta_t *m)
 {
-    s_selected_id     = m->id;
-    s_selected_status = m->status;
+    s_selected_id = m->id;
+    strlcpy(s_selected_note, m->note, sizeof(s_selected_note));
 
     lv_label_set_text(s_lbl_detail_name, m->name);
 
-    const char *type_str   = i18n_t(type_en_str(m->type));
-    const char *status_str = (m->status == SESSION_STATUS_OPEN)
-                             ? i18n_t("Open") : i18n_t("Closed");
+    const char *type_str = i18n_t(type_en_str(m->type));
     char info[64];
-    snprintf(info, sizeof(info), "%s | %" PRIu32 " | %s",
-             type_str, m->tag_count, status_str);
+    snprintf(info, sizeof(info), "%s | %" PRIu32, type_str, m->tag_count);
     lv_label_set_text(s_lbl_detail_info, info);
-
-    // Button visibility depends on status
-    if (m->status == SESSION_STATUS_CLOSED) {
-        lv_obj_clear_flag(s_btn_reopen,        LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag  (s_btn_set_current,   LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag  (s_btn_close_session, LV_OBJ_FLAG_HIDDEN);
-    } else {  // OPEN
-        lv_obj_add_flag  (s_btn_reopen,        LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(s_btn_set_current,   LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(s_btn_close_session, LV_OBJ_FLAG_HIDDEN);
-    }
 
     // Hide list and header — detail is full-screen
     lv_obj_add_flag(s_hdr,  LV_OBJ_FLAG_HIDDEN);
@@ -127,7 +120,7 @@ static void rebuild_list(void)
         lv_label_set_text(lbl_name, m->name);
         lv_label_set_long_mode(lbl_name, LV_LABEL_LONG_DOT);
         lv_obj_set_width(lbl_name, 230);
-        lv_obj_set_style_text_font(lbl_name, &lv_font_montserrat_18, LV_PART_MAIN);
+        lv_obj_set_style_text_font(lbl_name, &pilocows_font_18, LV_PART_MAIN);
         lv_obj_align(lbl_name, LV_ALIGN_LEFT_MID, 4, 0);
 
         // Tag count column (middle-right)
@@ -135,20 +128,9 @@ static void rebuild_list(void)
         snprintf(cnt_buf, sizeof(cnt_buf), "%" PRIu32, m->tag_count);
         lv_obj_t *lbl_cnt = lv_label_create(row);
         lv_label_set_text(lbl_cnt, cnt_buf);
-        lv_obj_set_style_text_font(lbl_cnt, &lv_font_montserrat_18, LV_PART_MAIN);
+        lv_obj_set_style_text_font(lbl_cnt, &pilocows_font_18, LV_PART_MAIN);
         lv_obj_set_style_text_color(lbl_cnt, lv_palette_main(LV_PALETTE_BLUE_GREY), LV_PART_MAIN);
         lv_obj_align(lbl_cnt, LV_ALIGN_RIGHT_MID, -82, 0);
-
-        // Status badge (right side)
-        const char *st = (m->status == SESSION_STATUS_OPEN)
-                         ? i18n_t("Open") : i18n_t("Closed");
-        lv_color_t st_color = (m->status == SESSION_STATUS_OPEN)
-                              ? lv_color_hex(0x27AE60) : lv_color_hex(0x888899);
-        lv_obj_t *lbl_st = lv_label_create(row);
-        lv_label_set_text(lbl_st, st);
-        lv_obj_set_style_text_color(lbl_st, st_color, LV_PART_MAIN);
-        lv_obj_set_style_text_font(lbl_st, &lv_font_montserrat_18, LV_PART_MAIN);
-        lv_obj_align(lbl_st, LV_ALIGN_RIGHT_MID, -8, 0);
 
         // Pass session id via user_data on click
         static session_meta_t copy_buf[LIST_MAX];
@@ -159,6 +141,52 @@ static void rebuild_list(void)
             show_detail(meta);
         }, LV_EVENT_CLICKED, &copy_buf[i]);
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Note modal
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void open_note_modal(void)
+{
+    lv_textarea_set_text(s_ta_note_edit, s_selected_note);
+    lv_keyboard_set_textarea(s_kb_note_edit, s_ta_note_edit);
+    lv_obj_clear_flag(s_note_overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_scroll_to_y(s_ta_note_edit, 0, LV_ANIM_OFF);
+}
+
+static void close_note_modal(void)
+{
+    const char *text = lv_textarea_get_text(s_ta_note_edit);
+    strlcpy(s_selected_note, text, sizeof(s_selected_note));
+    session_save_note(s_selected_id, s_selected_note);
+    lv_obj_add_flag(s_note_overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_keyboard_set_textarea(s_kb_note_edit, NULL);
+}
+
+static void on_note_edit_btn(lv_event_t *e)
+{
+    (void)e;
+    open_note_modal();
+}
+
+static void on_note_done(lv_event_t *e)
+{
+    (void)e;
+    close_note_modal();
+}
+
+static void on_note_kb_ready(lv_event_t *e)
+{
+    (void)e;
+    close_note_modal();
+}
+
+static void on_note_ta_focused(lv_event_t *e)
+{
+    (void)e;
+    lv_keyboard_set_textarea(s_kb_note_edit, s_ta_note_edit);
+    lv_obj_clear_flag(s_kb_note_edit, LV_OBJ_FLAG_HIDDEN);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -178,16 +206,6 @@ static void on_detail_close(lv_event_t *e)
     hide_detail();
 }
 
-static void on_reopen(lv_event_t *e)
-{
-    (void)e;
-    if (s_selected_id == 0) return;
-    session_set_status(s_selected_id, SESSION_STATUS_OPEN);
-    session_set_active(s_selected_id);
-    ESP_LOGI(TAG, "Reopened session %" PRIu32, s_selected_id);
-    ui_manager_show(SCREEN_SCAN);
-}
-
 static void on_set_current(lv_event_t *e)
 {
     (void)e;
@@ -195,16 +213,6 @@ static void on_set_current(lv_event_t *e)
     session_set_active(s_selected_id);
     ESP_LOGI(TAG, "Set current session %" PRIu32, s_selected_id);
     ui_manager_show(SCREEN_SCAN);
-}
-
-static void on_close_session(lv_event_t *e)
-{
-    (void)e;
-    if (s_selected_id == 0) return;
-    session_set_status(s_selected_id, SESSION_STATUS_CLOSED);
-    ESP_LOGI(TAG, "Closed session %" PRIu32, s_selected_id);
-    hide_detail();
-    rebuild_list();
 }
 
 static void on_delete(lv_event_t *e)
@@ -258,18 +266,18 @@ void screen_session_list_create(void)
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
     s_lbl_back = lv_label_create(btn_back);
     lv_label_set_text(s_lbl_back, i18n_t(STR_BTN_BACK));
-    lv_obj_set_style_text_font(s_lbl_back, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_back, &pilocows_font_18, LV_PART_MAIN);
     lv_obj_center(s_lbl_back);
 
     s_lbl_title = lv_label_create(s_hdr);
     lv_label_set_text(s_lbl_title, i18n_t(STR_SESSION_LIST));
-    lv_obj_set_style_text_font(s_lbl_title, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_title, &pilocows_font_20, LV_PART_MAIN);
     lv_obj_align(s_lbl_title, LV_ALIGN_CENTER, 0, 0);
 
     // ── Empty label ───────────────────────────────────────────────────────────
     s_lbl_empty = lv_label_create(s_scr);
     lv_label_set_text(s_lbl_empty, i18n_t(STR_HISTORY_EMPTY));
-    lv_obj_set_style_text_font(s_lbl_empty, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_empty, &pilocows_font_20, LV_PART_MAIN);
     lv_obj_set_pos(s_lbl_empty, 0, 150);
     lv_obj_set_width(s_lbl_empty, 480);
     lv_obj_set_style_text_align(s_lbl_empty, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
@@ -304,53 +312,25 @@ void screen_session_list_create(void)
     lv_label_set_text(s_lbl_detail_name, "");
     lv_label_set_long_mode(s_lbl_detail_name, LV_LABEL_LONG_DOT);
     lv_obj_set_width(s_lbl_detail_name, 448);
-    lv_obj_set_style_text_font(s_lbl_detail_name, &lv_font_montserrat_22, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_detail_name, &pilocows_font_22, LV_PART_MAIN);
     lv_obj_set_pos(s_lbl_detail_name, 0, 0);
 
     s_lbl_detail_info = lv_label_create(s_detail_panel);
     lv_label_set_text(s_lbl_detail_info, "");
-    lv_obj_set_style_text_font(s_lbl_detail_info, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_detail_info, &pilocows_font_18, LV_PART_MAIN);
     lv_obj_set_pos(s_lbl_detail_info, 0, 32);
 
-    // ── Reopen button (closed sessions only) ──────────────────────────────────
-    s_btn_reopen = lv_btn_create(s_detail_panel);
-    lv_obj_set_size(s_btn_reopen, 448, 50);
-    lv_obj_set_pos(s_btn_reopen, 0, 74);
-    lv_obj_set_style_bg_color(s_btn_reopen, lv_color_hex(0x27AE60), LV_PART_MAIN);
-    lv_obj_set_style_radius(s_btn_reopen, 6, LV_PART_MAIN);
-    lv_obj_set_ext_click_area(s_btn_reopen, 10);
-    lv_obj_add_event_cb(s_btn_reopen, on_reopen, LV_EVENT_CLICKED, NULL);
-    s_lbl_btn_reopen = lv_label_create(s_btn_reopen);
-    lv_label_set_text(s_lbl_btn_reopen, i18n_t(STR_SESSION_REOPEN));
-    lv_obj_set_style_text_color(s_lbl_btn_reopen, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_lbl_btn_reopen, &lv_font_montserrat_18, LV_PART_MAIN);
-    lv_obj_center(s_lbl_btn_reopen);
-
-    // ── Set as Current button (open sessions, left half) ──────────────────────
+    // ── Set as Current button (full-width) ────────────────────────────────────
     s_btn_set_current = lv_btn_create(s_detail_panel);
-    lv_obj_set_size(s_btn_set_current, 220, 50);
+    lv_obj_set_size(s_btn_set_current, 448, 50);
     lv_obj_set_pos(s_btn_set_current, 0, 74);
     lv_obj_set_style_radius(s_btn_set_current, 6, LV_PART_MAIN);
     lv_obj_set_ext_click_area(s_btn_set_current, 10);
     lv_obj_add_event_cb(s_btn_set_current, on_set_current, LV_EVENT_CLICKED, NULL);
     s_lbl_btn_set_current = lv_label_create(s_btn_set_current);
     lv_label_set_text(s_lbl_btn_set_current, i18n_t(STR_SESSION_SET_CURRENT));
-    lv_obj_set_style_text_font(s_lbl_btn_set_current, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_btn_set_current, &pilocows_font_18, LV_PART_MAIN);
     lv_obj_center(s_lbl_btn_set_current);
-
-    // ── Close Session button (open sessions, right half) ──────────────────────
-    s_btn_close_session = lv_btn_create(s_detail_panel);
-    lv_obj_set_size(s_btn_close_session, 220, 50);
-    lv_obj_set_pos(s_btn_close_session, 228, 74);
-    lv_obj_set_style_bg_color(s_btn_close_session, lv_color_hex(0xE67E22), LV_PART_MAIN);
-    lv_obj_set_style_radius(s_btn_close_session, 6, LV_PART_MAIN);
-    lv_obj_set_ext_click_area(s_btn_close_session, 10);
-    lv_obj_add_event_cb(s_btn_close_session, on_close_session, LV_EVENT_CLICKED, NULL);
-    s_lbl_btn_close_session = lv_label_create(s_btn_close_session);
-    lv_label_set_text(s_lbl_btn_close_session, i18n_t(STR_SESSION_CLOSE));
-    lv_obj_set_style_text_color(s_lbl_btn_close_session, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_lbl_btn_close_session, &lv_font_montserrat_18, LV_PART_MAIN);
-    lv_obj_center(s_lbl_btn_close_session);
 
     // ── Delete button (always visible) ────────────────────────────────────────
     s_btn_delete = lv_btn_create(s_detail_panel);
@@ -363,8 +343,20 @@ void screen_session_list_create(void)
     s_lbl_btn_delete = lv_label_create(s_btn_delete);
     lv_label_set_text(s_lbl_btn_delete, i18n_t(STR_SESSION_DELETE));
     lv_obj_set_style_text_color(s_lbl_btn_delete, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_lbl_btn_delete, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_btn_delete, &pilocows_font_18, LV_PART_MAIN);
     lv_obj_center(s_lbl_btn_delete);
+
+    // ── Edit note button (between Delete and Cancel) ──────────────────────────
+    s_btn_edit_note = lv_btn_create(s_detail_panel);
+    lv_obj_set_size(s_btn_edit_note, 448, 40);
+    lv_obj_set_pos(s_btn_edit_note, 0, 192);
+    lv_obj_set_style_radius(s_btn_edit_note, 6, LV_PART_MAIN);
+    lv_obj_set_ext_click_area(s_btn_edit_note, 10);
+    lv_obj_add_event_cb(s_btn_edit_note, on_note_edit_btn, LV_EVENT_CLICKED, NULL);
+    s_lbl_btn_edit_note = lv_label_create(s_btn_edit_note);
+    lv_label_set_text(s_lbl_btn_edit_note, i18n_t(STR_EDIT_SESSION_NOTE));
+    lv_obj_set_style_text_font(s_lbl_btn_edit_note, &pilocows_font_18, LV_PART_MAIN);
+    lv_obj_center(s_lbl_btn_edit_note);
 
     // ── Cancel button (bottom) ────────────────────────────────────────────────
     s_btn_detail_cancel = lv_btn_create(s_detail_panel);
@@ -376,10 +368,53 @@ void screen_session_list_create(void)
     lv_obj_add_event_cb(s_btn_detail_cancel, on_detail_close, LV_EVENT_CLICKED, NULL);
     s_lbl_btn_detail_cancel = lv_label_create(s_btn_detail_cancel);
     lv_label_set_text(s_lbl_btn_detail_cancel, i18n_t(STR_BTN_CANCEL));
-    lv_obj_set_style_text_font(s_lbl_btn_detail_cancel, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_btn_detail_cancel, &pilocows_font_18, LV_PART_MAIN);
     lv_obj_center(s_lbl_btn_detail_cancel);
 
     lv_obj_add_flag(s_detail_panel, LV_OBJ_FLAG_HIDDEN);
+
+    // ── Note edit modal overlay (full-screen, on top of everything) ───────────
+    s_note_overlay = lv_obj_create(s_scr);
+    lv_obj_set_size(s_note_overlay, 480, 320);
+    lv_obj_set_pos(s_note_overlay, 0, 0);
+    lv_obj_clear_flag(s_note_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_radius(s_note_overlay, 0, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_note_overlay, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_note_overlay, 0, LV_PART_MAIN);
+    lv_obj_add_flag(s_note_overlay, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t *lbl_note_title = lv_label_create(s_note_overlay);
+    lv_label_set_text(lbl_note_title, i18n_t(STR_SESSION_NOTE));
+    lv_obj_set_style_text_font(lbl_note_title, &pilocows_font_18, LV_PART_MAIN);
+    lv_obj_set_pos(lbl_note_title, 8, 14);
+
+    lv_obj_t *btn_note_done = lv_btn_create(s_note_overlay);
+    lv_obj_set_size(btn_note_done, 80, 32);
+    lv_obj_set_pos(btn_note_done, 392, 8);
+    lv_obj_set_style_radius(btn_note_done, 4, LV_PART_MAIN);
+    lv_obj_add_event_cb(btn_note_done, on_note_done, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *lbl_note_done = lv_label_create(btn_note_done);
+    lv_label_set_text(lbl_note_done, i18n_t(STR_BTN_OK));
+    lv_obj_set_style_text_font(lbl_note_done, &pilocows_font_18, LV_PART_MAIN);
+    lv_obj_center(lbl_note_done);
+
+    s_ta_note_edit = lv_textarea_create(s_note_overlay);
+    lv_obj_set_size(s_ta_note_edit, 464, 65);
+    lv_obj_set_pos(s_ta_note_edit, 8, 54);
+    lv_textarea_set_one_line(s_ta_note_edit, false);
+    lv_textarea_set_max_length(s_ta_note_edit, SESSION_NOTE_MAX - 1);
+    lv_textarea_set_placeholder_text(s_ta_note_edit, i18n_t(STR_SESSION_NOTE_PLACEHOLDER));
+    lv_obj_set_scrollbar_mode(s_ta_note_edit, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_style_text_font(s_ta_note_edit, &pilocows_font_18, LV_PART_MAIN);
+    lv_obj_add_event_cb(s_ta_note_edit, on_note_ta_focused, LV_EVENT_FOCUSED, NULL);
+    lv_obj_add_event_cb(s_ta_note_edit, on_note_ta_focused, LV_EVENT_CLICKED, NULL);
+
+    s_kb_note_edit = lv_keyboard_create(s_note_overlay);
+    lv_obj_set_size(s_kb_note_edit, 480, 200);
+    lv_obj_align(s_kb_note_edit, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_text_font(s_kb_note_edit, &pilocows_font_22, LV_PART_ITEMS);
+    lv_obj_add_event_cb(s_kb_note_edit, on_note_kb_ready, LV_EVENT_READY,  NULL);
+    lv_obj_add_event_cb(s_kb_note_edit, on_note_kb_ready, LV_EVENT_CANCEL, NULL);
 
     ESP_LOGI(TAG, "Session list screen created");
 }
@@ -398,10 +433,9 @@ void screen_session_list_refresh_language(void)
 {
     lv_label_set_text(s_lbl_title,                i18n_t(STR_SESSION_LIST));
     lv_label_set_text(s_lbl_back,                 i18n_t(STR_BTN_BACK));
-    lv_label_set_text(s_lbl_btn_reopen,           i18n_t(STR_SESSION_REOPEN));
     lv_label_set_text(s_lbl_btn_set_current,      i18n_t(STR_SESSION_SET_CURRENT));
-    lv_label_set_text(s_lbl_btn_close_session,    i18n_t(STR_SESSION_CLOSE));
     lv_label_set_text(s_lbl_btn_delete,           i18n_t(STR_SESSION_DELETE));
+    lv_label_set_text(s_lbl_btn_edit_note,        i18n_t(STR_EDIT_SESSION_NOTE));
     lv_label_set_text(s_lbl_btn_detail_cancel,    i18n_t(STR_BTN_CANCEL));
     // Rebuild list rows so type/status strings update
     rebuild_list();

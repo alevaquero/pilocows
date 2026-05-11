@@ -118,11 +118,11 @@ static int gatt_session_list_cb(uint16_t conn_handle, uint16_t attr_handle,
         char esc_name[72];
         json_escape(esc_name, sizeof(esc_name), m->name, sizeof(m->name));
         pos += snprintf(json_buf + pos, sizeof(json_buf) - pos,
-            "%s{\"id\":%lu,\"name\":\"%s\",\"type\":%u,\"status\":%u,"
+            "%s{\"id\":%lu,\"name\":\"%s\",\"type\":%u,"
             "\"count\":%lu,\"ts\":%ld,\"synced\":%d}",
             (i > start) ? "," : "",
             (unsigned long)m->id, esc_name,
-            (unsigned)m->type, (unsigned)m->status,
+            (unsigned)m->type,
             (unsigned long)m->tag_count, (long)m->created_at,
             m->synced ? 1 : 0);
     }
@@ -377,10 +377,10 @@ static int gatt_session_meta_cb(uint16_t conn_handle, uint16_t attr_handle,
 
     int pos = snprintf(json_buf, sizeof(json_buf),
         "{\"id\":%lu,\"device_id\":\"%s\",\"name\":\"%s\","
-        "\"type\":%u,\"status\":%u,\"created_at\":%ld,"
+        "\"type\":%u,\"created_at\":%ld,"
         "\"tag_count\":%lu,\"synced\":%d,\"note\":\"%s\"}",
         (unsigned long)meta.id, device_id, esc_name,
-        (unsigned)meta.type, (unsigned)meta.status, (long)meta.created_at,
+        (unsigned)meta.type, (long)meta.created_at,
         (unsigned long)meta.tag_count, meta.synced ? 1 : 0,
         esc_note);
 

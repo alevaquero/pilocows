@@ -82,14 +82,9 @@
 #define STR_SESSION_NONE            "No active session"
 #define STR_SESSION_ACTIVE          "Active:"
 #define STR_SESSION_ANIMALS         "Animals:"
-#define STR_SESSION_CLOSE           "Close Session"
-#define STR_SESSION_REOPEN          "Reopen"
 #define STR_SESSION_DELETE          "Delete"
 #define STR_SESSION_SET_CURRENT     "Set as Current"
-#define STR_SESSION_OPEN            "Open"
-#define STR_SESSION_CLOSED          "Closed"
 #define STR_SESSION_CONFIRM_DELETE  "Delete this session?"
-#define STR_SESSION_CONFIRM_CLOSE   "Close this session?"
 
 // Sessions — create
 #define STR_SESSION_TYPE            "Type"
@@ -128,6 +123,7 @@
 #define STR_NOTE_PLACEHOLDER        "Add animal note..."
 #define STR_SESSION_NOTE            "Session note"
 #define STR_SESSION_NOTE_PLACEHOLDER "Add session note..."
+#define STR_EDIT_SESSION_NOTE       "Edit session note"
 
 // Vaccines settings
 #define STR_SETTINGS_VACCINES       "Vaccines"

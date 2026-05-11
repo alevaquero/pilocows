@@ -10,7 +10,6 @@ export interface SessionSummary {
   device_id: string
   name: string
   session_type: number   // 0=general 1=weighing 2=vaccination 3=pregnancy 4=tb_test
-  status: number         // 0=open, 1=closed
   created_at: string
   tag_count: number
   handheld_note: string
@@ -28,8 +27,8 @@ export interface DbSessionRecord {
   scanned_at: string
   event_data: string   // JSON blob: {"weight_kg":350} | {"vaccines":"..."} | etc.
   note: string
+  tag_registered: boolean
   animal_id?: number
-  animal_name?: string
 }
 
 /** Single session row — no records, no record_count. Returned by PATCH. */
@@ -55,7 +54,6 @@ export interface IncomingSession {
   device_id: string
   name: string
   type: number         // session_type integer
-  status: number
   created_at: number   // Unix timestamp
   tag_count: number
   note: string
@@ -113,14 +111,24 @@ export function sessionTypeKey(t: number): string {
 }
 
 /** Parse event_data JSON blob to a human-readable summary string. */
-export function formatEventData(eventData: string, sessionType: number): string {
+export function formatEventData(
+  eventData: string,
+  sessionType: number,
+  t?: (key: string) => string,
+): string {
   try {
     const d = JSON.parse(eventData)
     switch (sessionType) {
       case 1: return d.weight_kg != null ? `${d.weight_kg} kg` : ''
       case 2: return d.vaccines ?? ''
-      case 3: return d.pregnancy ?? ''
-      case 4: return d.tb_result ?? ''
+      case 3: {
+        const raw: string = d.pregnancy ?? ''
+        return raw && t ? t(`pregnancy.${raw}`) : raw
+      }
+      case 4: {
+        const raw: string = d.tb_result ?? ''
+        return raw && t ? t(`tb_test.${raw}`) : raw
+      }
       default: return ''
     }
   } catch {

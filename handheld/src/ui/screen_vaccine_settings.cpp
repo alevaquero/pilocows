@@ -6,6 +6,7 @@
 #include "../storage/session_storage.h"
 #include "esp_log.h"
 #include <string.h>
+#include "fonts.h"
 
 static const char *TAG = "scr_vax";
 
@@ -64,7 +65,7 @@ static void rebuild_list(void)
         lv_label_set_text(lbl, vlist[i].name);
         lv_label_set_long_mode(lbl, LV_LABEL_LONG_DOT);
         lv_obj_set_width(lbl, 340);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_18, LV_PART_MAIN);
+        lv_obj_set_style_text_font(lbl, &pilocows_font_18, LV_PART_MAIN);
         lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 4, 0);
 
         lv_obj_t *btn_del = lv_btn_create(row);
@@ -76,7 +77,7 @@ static void rebuild_list(void)
         lv_obj_t *lbl_del = lv_label_create(btn_del);
         lv_label_set_text(lbl_del, i18n_t(STR_VACCINE_DELETE));
         lv_obj_set_style_text_color(lbl_del, lv_color_white(), LV_PART_MAIN);
-        lv_obj_set_style_text_font(lbl_del, &lv_font_montserrat_18, LV_PART_MAIN);
+        lv_obj_set_style_text_font(lbl_del, &pilocows_font_18, LV_PART_MAIN);
         lv_obj_center(lbl_del);
 
         // Pass vaccine id via user_data
@@ -217,12 +218,12 @@ void screen_vaccine_settings_create(void)
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
     s_lbl_back = lv_label_create(btn_back);
     lv_label_set_text(s_lbl_back, i18n_t(STR_BTN_BACK));
-    lv_obj_set_style_text_font(s_lbl_back, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_back, &pilocows_font_18, LV_PART_MAIN);
     lv_obj_center(s_lbl_back);
 
     s_lbl_title = lv_label_create(s_hdr);
     lv_label_set_text(s_lbl_title, i18n_t(STR_VACCINES_TITLE));
-    lv_obj_set_style_text_font(s_lbl_title, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_title, &pilocows_font_20, LV_PART_MAIN);
     lv_obj_align(s_lbl_title, LV_ALIGN_CENTER, 0, 0);
 
     // ── Add button (top-right of header) ─────────────────────────────────────
@@ -236,13 +237,13 @@ void screen_vaccine_settings_create(void)
     lv_obj_add_event_cb(btn_add, on_add_btn, LV_EVENT_CLICKED, NULL);
     s_lbl_btn_add = lv_label_create(btn_add);
     lv_label_set_text(s_lbl_btn_add, i18n_t(STR_VACCINE_ADD));
-    lv_obj_set_style_text_font(s_lbl_btn_add, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_btn_add, &pilocows_font_18, LV_PART_MAIN);
     lv_obj_center(s_lbl_btn_add);
 
     // ── Empty label ───────────────────────────────────────────────────────────
     s_lbl_empty = lv_label_create(s_scr);
     lv_label_set_text(s_lbl_empty, i18n_t(STR_VACCINE_NONE));
-    lv_obj_set_style_text_font(s_lbl_empty, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_empty, &pilocows_font_20, LV_PART_MAIN);
     lv_obj_set_pos(s_lbl_empty, 0, 150);
     lv_obj_set_width(s_lbl_empty, 480);
     lv_obj_set_style_text_align(s_lbl_empty, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
@@ -268,7 +269,7 @@ void screen_vaccine_settings_create(void)
 
     s_lbl_add_title = lv_label_create(s_add_panel);
     lv_label_set_text(s_lbl_add_title, i18n_t(STR_VACCINE_NAME));
-    lv_obj_set_style_text_font(s_lbl_add_title, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_add_title, &pilocows_font_18, LV_PART_MAIN);
     lv_obj_align(s_lbl_add_title, LV_ALIGN_TOP_LEFT, 0, 0);
 
     s_ta_name = lv_textarea_create(s_add_panel);
@@ -287,7 +288,7 @@ void screen_vaccine_settings_create(void)
     s_kb = lv_keyboard_create(s_scr);
     lv_obj_set_size(s_kb, 480, 200);
     lv_obj_align(s_kb, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_text_font(s_kb, &lv_font_montserrat_22, LV_PART_ITEMS);
+    lv_obj_set_style_text_font(s_kb, &pilocows_font_22, LV_PART_ITEMS);
     lv_obj_add_event_cb(s_kb, on_kb_ready, LV_EVENT_READY,  NULL);
     lv_obj_add_event_cb(s_kb, on_kb_ready, LV_EVENT_CANCEL, NULL);
     lv_obj_add_flag(s_kb, LV_OBJ_FLAG_HIDDEN);
@@ -304,7 +305,7 @@ void screen_vaccine_settings_create(void)
 
     s_lbl_del_msg = lv_label_create(s_del_panel);
     lv_label_set_text(s_lbl_del_msg, i18n_t(STR_VACCINE_CONFIRM_DELETE));
-    lv_obj_set_style_text_font(s_lbl_del_msg, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_del_msg, &pilocows_font_18, LV_PART_MAIN);
     lv_obj_set_width(s_lbl_del_msg, 330);
     lv_obj_set_style_text_align(s_lbl_del_msg, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_obj_align(s_lbl_del_msg, LV_ALIGN_TOP_MID, 0, 0);
@@ -319,7 +320,7 @@ void screen_vaccine_settings_create(void)
     s_lbl_del_confirm = lv_label_create(btn_del_ok);
     lv_label_set_text(s_lbl_del_confirm, i18n_t(STR_SESSION_DELETE));
     lv_obj_set_style_text_color(s_lbl_del_confirm, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_lbl_del_confirm, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_del_confirm, &pilocows_font_18, LV_PART_MAIN);
     lv_obj_center(s_lbl_del_confirm);
 
     lv_obj_t *btn_del_no = lv_btn_create(s_del_panel);
@@ -331,7 +332,7 @@ void screen_vaccine_settings_create(void)
     lv_obj_add_event_cb(btn_del_no, on_del_cancel, LV_EVENT_CLICKED, NULL);
     s_lbl_del_cancel = lv_label_create(btn_del_no);
     lv_label_set_text(s_lbl_del_cancel, i18n_t(STR_BTN_CANCEL));
-    lv_obj_set_style_text_font(s_lbl_del_cancel, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_del_cancel, &pilocows_font_18, LV_PART_MAIN);
     lv_obj_center(s_lbl_del_cancel);
 
     lv_obj_add_flag(s_del_panel, LV_OBJ_FLAG_HIDDEN);

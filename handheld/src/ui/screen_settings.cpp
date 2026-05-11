@@ -16,6 +16,7 @@
 #include "lvgl.h"
 #include <time.h>
 #include <sys/time.h>
+#include "fonts.h"
 
 static lv_obj_t *s_screen           = NULL;
 static lv_obj_t *s_lbl_title        = NULL;
@@ -128,7 +129,7 @@ static lv_obj_t *make_spinbox_col(lv_obj_t *parent, const char *label,
     // Field label — sized to column width and center-aligned
     lv_obj_t *lbl = lv_label_create(parent);
     lv_label_set_text(lbl, label);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(lbl, &pilocows_font_14, LV_PART_MAIN);
     lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_obj_set_size(lbl, col_w, lbl_h);
     lv_obj_set_pos(lbl, x, y);
@@ -224,7 +225,7 @@ static void on_datetime_edit(lv_event_t *e)
 
     lv_obj_t *title = lv_label_create(card);
     lv_label_set_text(title, i18n_t(STR_SETTINGS_SET_TIME));
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(title, &pilocows_font_20, LV_PART_MAIN);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 4);
 
     // Pre-fill with current system time
@@ -275,7 +276,7 @@ static void on_datetime_edit(lv_event_t *e)
 void screen_settings_create(void)
 {
     s_screen = lv_obj_create(NULL);
-    lv_obj_set_style_text_font(s_screen, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_screen, &pilocows_font_20, LV_PART_MAIN);
     lv_obj_clear_flag(s_screen, LV_OBJ_FLAG_SCROLLABLE);
 
     // ── Fixed header (44 px tall) ────────────────────────────────────────────
@@ -480,7 +481,7 @@ void screen_settings_create(void)
     {
         lv_obj_t *lbl = lv_label_create(panel);
         lv_label_set_text(lbl, "Pilocows v0.1.0");
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, LV_PART_MAIN);
+        lv_obj_set_style_text_font(lbl, &pilocows_font_14, LV_PART_MAIN);
         lv_obj_set_style_text_color(lbl, lv_color_hex(0xAAAAAA), LV_PART_MAIN);
         lv_obj_set_pos(lbl, 0, row_y + 10);
         lv_obj_set_width(lbl, 480);

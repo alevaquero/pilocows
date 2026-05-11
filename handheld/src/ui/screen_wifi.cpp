@@ -7,6 +7,7 @@
 #include "lvgl.h"
 #include <string.h>
 #include <stdio.h>
+#include "fonts.h"
 
 // ---------------------------------------------------------------------------
 // Normal-mode layout (480×320 landscape)
@@ -297,7 +298,7 @@ void screen_wifi_refresh_language(void)
 void screen_wifi_create(void)
 {
     s_screen = lv_obj_create(NULL);
-    lv_obj_set_style_text_font(s_screen, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_screen, &pilocows_font_20, LV_PART_MAIN);
     lv_obj_clear_flag(s_screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(s_screen, on_screen_loaded, LV_EVENT_SCREEN_LOADED, NULL);
 
@@ -321,7 +322,7 @@ void screen_wifi_create(void)
 
     s_lbl_title = lv_label_create(s_header);
     lv_label_set_text(s_lbl_title, i18n_t(STR_SETTINGS_WIFI));
-    lv_obj_set_style_text_font(s_lbl_title, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_title, &pilocows_font_20, LV_PART_MAIN);
     lv_obj_align(s_lbl_title, LV_ALIGN_CENTER, 0, 0);
 
     lv_obj_t *btn_rescan = lv_btn_create(s_header);
@@ -334,14 +335,14 @@ void screen_wifi_create(void)
 
     // ── Status line (y=46) ───────────────────────────────────────────────────
     s_lbl_status = lv_label_create(s_screen);
-    lv_obj_set_style_text_font(s_lbl_status, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_status, &pilocows_font_14, LV_PART_MAIN);
     lv_obj_set_style_text_color(s_lbl_status, lv_color_make(180, 180, 180), LV_PART_MAIN);
     lv_obj_set_pos(s_lbl_status, 10, 46);
     lv_label_set_text(s_lbl_status, i18n_t(STR_WIFI_DISCONNECTED));
 
     // ── Network row (dd y=82 h=38, label centred at y=94) ───────────────────
     s_lbl_net = lv_label_create(s_screen);
-    lv_obj_set_style_text_font(s_lbl_net, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_net, &pilocows_font_14, LV_PART_MAIN);
     lv_label_set_text(s_lbl_net, i18n_t(STR_WIFI_NETWORK));
     lv_obj_set_pos(s_lbl_net, 10, 94);
 
@@ -354,7 +355,7 @@ void screen_wifi_create(void)
 
     // ── Password row (textarea y=142 h=38, label centred at y=154) ──────────
     s_lbl_pass = lv_label_create(s_screen);
-    lv_obj_set_style_text_font(s_lbl_pass, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_pass, &pilocows_font_14, LV_PART_MAIN);
     lv_label_set_text(s_lbl_pass, i18n_t(STR_WIFI_PASSWORD));
     lv_obj_set_pos(s_lbl_pass, 10, 154);
 
@@ -391,7 +392,7 @@ void screen_wifi_create(void)
 
     // ── Auth-failure error banner (y=250, hidden by default) ─────────────────
     s_lbl_error = lv_label_create(s_screen);
-    lv_obj_set_style_text_font(s_lbl_error, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_error, &pilocows_font_14, LV_PART_MAIN);
     lv_obj_set_style_text_color(s_lbl_error, lv_color_make(255, 60, 60), LV_PART_MAIN);
     lv_obj_set_pos(s_lbl_error, 10, 250);
     lv_label_set_text(s_lbl_error, "");

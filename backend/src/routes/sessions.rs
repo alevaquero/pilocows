@@ -92,12 +92,11 @@ pub async fn sync_session(
     // Upsert session row — preserve frontend-editable fields on conflict.
     let session_id: i64 = sqlx::query_scalar(
         "INSERT INTO sessions
-             (handheld_session_id, device_id, name, type, status,
+             (handheld_session_id, device_id, name, type,
               created_at, tag_count, handheld_note, synced_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+         VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
          ON CONFLICT(handheld_session_id, device_id) DO UPDATE SET
              name          = excluded.name,
-             status        = excluded.status,
              tag_count     = excluded.tag_count,
              handheld_note = excluded.handheld_note,
              synced_at     = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
@@ -107,7 +106,6 @@ pub async fn sync_session(
     .bind(&s.device_id)
     .bind(&s.name)
     .bind(s.session_type)
-    .bind(s.status)
     .bind(&created_at)
     .bind(s.tag_count)
     .bind(&s.note)
@@ -180,11 +178,11 @@ pub async fn get_session(
     .await?
     .ok_or(AppError::NotFound)?;
 
-    // Fetch records, joining tags/animals to get animal info where available.
+    // Fetch records, joining tags/animals to get registration state.
     let records = sqlx::query_as::<_, SessionRecord>(
         "SELECT r.id, r.session_id, r.eid, r.scanned_at, r.event_data, r.note,
-                a.id   AS animal_id,
-                a.name AS animal_name
+                CASE WHEN t.id IS NOT NULL THEN 1 ELSE 0 END AS tag_registered,
+                a.id AS animal_id
          FROM session_records r
          LEFT JOIN tags    t ON t.tag_number = r.eid
          LEFT JOIN animals a ON a.tag_id = t.id AND a.is_active = 1

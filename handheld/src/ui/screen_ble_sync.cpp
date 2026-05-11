@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include "fonts.h"
 
 // ---------------------------------------------------------------------------
 // Modal overlay — created on demand on top of whatever screen is active.
@@ -53,7 +54,7 @@ static void apply_ble_update(void *data)
             char buf[80];
             snprintf(buf, sizeof(buf), "%s...", u->detail[0] ? u->detail : "?");
             lv_obj_t *btn = lv_list_add_btn(s_list, NULL, buf);
-            lv_obj_set_style_text_font(btn, &lv_font_montserrat_14, LV_PART_MAIN);
+            lv_obj_set_style_text_font(btn, &pilocows_font_14, LV_PART_MAIN);
             lv_obj_set_style_text_color(btn, lv_color_hex(0x555555), LV_PART_MAIN);
         }
         break;
@@ -155,13 +156,13 @@ void screen_ble_sync_show_modal(void)
     // Title
     lv_obj_t *title = lv_label_create(card);
     lv_label_set_text(title, i18n_t(STR_SETTINGS_SYNC));
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(title, &pilocows_font_20, LV_PART_MAIN);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
 
     // Status label  (y=34, leaves room for title at y=6 ~24px tall)
     s_lbl_status = lv_label_create(card);
     lv_label_set_text(s_lbl_status, i18n_t(STR_BLE_ADVERTISING));
-    lv_obj_set_style_text_font(s_lbl_status, &lv_font_montserrat_18, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_status, &pilocows_font_18, LV_PART_MAIN);
     lv_obj_set_style_text_color(s_lbl_status, lv_color_hex(0x2C3E50), LV_PART_MAIN);
     lv_obj_set_width(s_lbl_status, 440);
     lv_label_set_long_mode(s_lbl_status, LV_LABEL_LONG_WRAP);

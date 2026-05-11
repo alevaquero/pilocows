@@ -7,20 +7,20 @@
 #include "esp_log.h"
 #include <stdio.h>
 #include <inttypes.h>
+#include "fonts.h"
 
 static const char *TAG = "scr_sess_menu";
 
 // ── Static label refs (for refresh_language) ─────────────────────────────────
 static lv_obj_t *s_lbl_no_session;
 static lv_obj_t *s_lbl_btn_resume;
-static lv_obj_t *s_lbl_btn_close;
 static lv_obj_t *s_lbl_btn_new;
 static lv_obj_t *s_lbl_btn_list;
 static lv_obj_t *s_lbl_btn_settings;
 
 // ── Dynamic content labels (refreshed from storage) ───────────────────────────
 static lv_obj_t *s_lbl_sess_name;
-static lv_obj_t *s_lbl_sess_info;  // "Weighing · 5 animals · Open"
+static lv_obj_t *s_lbl_sess_info;  // "Weighing · 5 animals"
 
 // ── Layout containers toggled by active-session state ────────────────────────
 static lv_obj_t *s_card;            // active session card
@@ -57,13 +57,10 @@ static void refresh_state(void)
     bool has_active = session_get_active(&m);
 
     if (has_active) {
-        // Build info string: "Weighing · 12 · Open"
-        const char *type_str   = i18n_t(type_en_str(m.type));
-        const char *status_str = (m.status == SESSION_STATUS_OPEN)
-                                 ? i18n_t("Open") : i18n_t("Closed");
+        // Build info string: "Weighing · 12"
+        const char *type_str = i18n_t(type_en_str(m.type));
         char info[64];
-        snprintf(info, sizeof(info), "%s | %" PRIu32 " | %s",
-                 type_str, m.tag_count, status_str);
+        snprintf(info, sizeof(info), "%s | %" PRIu32, type_str, m.tag_count);
 
         lv_label_set_text(s_lbl_sess_name, m.name);
         lv_label_set_text(s_lbl_sess_info, info);
@@ -92,17 +89,6 @@ static void on_resume(lv_event_t *e)
 {
     (void)e;
     ui_manager_show(SCREEN_SCAN);
-}
-
-static void on_close_session(lv_event_t *e)
-{
-    (void)e;
-    session_meta_t m;
-    if (session_get_active(&m)) {
-        session_set_status(m.id, SESSION_STATUS_CLOSED);
-        ESP_LOGI(TAG, "Session %" PRIu32 " closed", m.id);
-    }
-    refresh_state();
 }
 
 static void on_new_session(lv_event_t *e)
@@ -152,17 +138,17 @@ void screen_session_menu_create(void)
 
     s_lbl_sess_name = lv_label_create(s_card);
     lv_label_set_text(s_lbl_sess_name, "");
-    lv_obj_set_style_text_font(s_lbl_sess_name, &lv_font_montserrat_22, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_sess_name, &pilocows_font_22, LV_PART_MAIN);
     lv_label_set_long_mode(s_lbl_sess_name, LV_LABEL_LONG_DOT);
     lv_obj_set_width(s_lbl_sess_name, 444);
     lv_obj_align(s_lbl_sess_name, LV_ALIGN_TOP_LEFT, 0, 0);
 
     s_lbl_sess_info = lv_label_create(s_card);
     lv_label_set_text(s_lbl_sess_info, "");
-    lv_obj_set_style_text_font(s_lbl_sess_info, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_sess_info, &pilocows_font_20, LV_PART_MAIN);
     lv_obj_align(s_lbl_sess_info, LV_ALIGN_BOTTOM_LEFT, 0, 0);
 
-    // ── Resume + Close row ────────────────────────────────────────────────────
+    // ── Resume button (full-width) ────────────────────────────────────────────
     s_row_resume = lv_obj_create(s_scr);
     lv_obj_set_size(s_row_resume, 464, 70);
     lv_obj_set_pos(s_row_resume, 8, 106);
@@ -172,7 +158,7 @@ void screen_session_menu_create(void)
     lv_obj_set_style_pad_all(s_row_resume, 0, LV_PART_MAIN);
 
     lv_obj_t *btn_resume = lv_btn_create(s_row_resume);
-    lv_obj_set_size(btn_resume, 225, 70);
+    lv_obj_set_size(btn_resume, 464, 70);
     lv_obj_set_pos(btn_resume, 0, 0);
     lv_obj_set_style_radius(btn_resume, 6, LV_PART_MAIN);
     lv_obj_set_style_bg_color(btn_resume, lv_color_hex(0x27AE60), LV_PART_MAIN);
@@ -181,26 +167,13 @@ void screen_session_menu_create(void)
     s_lbl_btn_resume = lv_label_create(btn_resume);
     lv_label_set_text(s_lbl_btn_resume, i18n_t(STR_SESSION_RESUME));
     lv_obj_set_style_text_color(s_lbl_btn_resume, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_lbl_btn_resume, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_btn_resume, &pilocows_font_20, LV_PART_MAIN);
     lv_obj_center(s_lbl_btn_resume);
-
-    lv_obj_t *btn_close = lv_btn_create(s_row_resume);
-    lv_obj_set_size(btn_close, 231, 70);
-    lv_obj_set_pos(btn_close, 233, 0);
-    lv_obj_set_style_radius(btn_close, 6, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(btn_close, lv_color_hex(0xE67E22), LV_PART_MAIN);
-    lv_obj_set_ext_click_area(btn_close, 10);
-    lv_obj_add_event_cb(btn_close, on_close_session, LV_EVENT_CLICKED, NULL);
-    s_lbl_btn_close = lv_label_create(btn_close);
-    lv_label_set_text(s_lbl_btn_close, i18n_t(STR_SESSION_CLOSE));
-    lv_obj_set_style_text_color(s_lbl_btn_close, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_lbl_btn_close, &lv_font_montserrat_20, LV_PART_MAIN);
-    lv_obj_center(s_lbl_btn_close);
 
     // ── "No active session" label ─────────────────────────────────────────────
     s_lbl_no_session = lv_label_create(s_scr);
     lv_label_set_text(s_lbl_no_session, i18n_t(STR_SESSION_NONE));
-    lv_obj_set_style_text_font(s_lbl_no_session, &lv_font_montserrat_22, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_no_session, &pilocows_font_22, LV_PART_MAIN);
     lv_obj_set_pos(s_lbl_no_session, 0, 44);
     lv_obj_set_width(s_lbl_no_session, 480);
     lv_obj_set_style_text_align(s_lbl_no_session, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
@@ -223,7 +196,7 @@ void screen_session_menu_create(void)
     lv_obj_add_event_cb(btn_new, on_new_session, LV_EVENT_CLICKED, NULL);
     s_lbl_btn_new = lv_label_create(btn_new);
     lv_label_set_text(s_lbl_btn_new, i18n_t(STR_SESSION_NEW));
-    lv_obj_set_style_text_font(s_lbl_btn_new, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_btn_new, &pilocows_font_20, LV_PART_MAIN);
     lv_obj_center(s_lbl_btn_new);
 
     lv_obj_t *btn_list = lv_btn_create(s_row_always);
@@ -234,7 +207,7 @@ void screen_session_menu_create(void)
     lv_obj_add_event_cb(btn_list, on_session_list, LV_EVENT_CLICKED, NULL);
     s_lbl_btn_list = lv_label_create(btn_list);
     lv_label_set_text(s_lbl_btn_list, i18n_t(STR_SESSION_LIST));
-    lv_obj_set_style_text_font(s_lbl_btn_list, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_btn_list, &pilocows_font_20, LV_PART_MAIN);
     lv_obj_center(s_lbl_btn_list);
 
     // ── Settings button (full-width, anchored to bottom) ──────────────────────
@@ -248,7 +221,7 @@ void screen_session_menu_create(void)
     s_lbl_btn_settings = lv_label_create(btn_settings);
     lv_label_set_text_fmt(s_lbl_btn_settings, "%s  %s", LV_SYMBOL_SETTINGS, i18n_t(STR_SETTINGS_TITLE));
     lv_obj_set_style_text_color(s_lbl_btn_settings, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_lbl_btn_settings, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_lbl_btn_settings, &pilocows_font_20, LV_PART_MAIN);
     lv_obj_center(s_lbl_btn_settings);
 
     // ── Initial state (hidden until load) ─────────────────────────────────────
@@ -273,7 +246,6 @@ void screen_session_menu_refresh_language(void)
 {
     lv_label_set_text(s_lbl_no_session,    i18n_t(STR_SESSION_NONE));
     lv_label_set_text(s_lbl_btn_resume,    i18n_t(STR_SESSION_RESUME));
-    lv_label_set_text(s_lbl_btn_close,     i18n_t(STR_SESSION_CLOSE));
     lv_label_set_text(s_lbl_btn_new,       i18n_t(STR_SESSION_NEW));
     lv_label_set_text(s_lbl_btn_list,      i18n_t(STR_SESSION_LIST));
     lv_label_set_text_fmt(s_lbl_btn_settings, "%s  %s", LV_SYMBOL_SETTINGS, i18n_t(STR_SETTINGS_TITLE));

@@ -44,11 +44,6 @@ fn session_type_str(t: u8) -> &'static str {
     }
 }
 
-// session_status_t: 0=open, 1=closed
-fn session_status_str(s: u8) -> &'static str {
-    if s == 0 { "open" } else { "closed" }
-}
-
 fn unix_to_iso(ts: i64) -> String {
     DateTime::<Utc>::from_timestamp(ts, 0)
         .map(|dt| dt.format("%Y-%m-%dT%H:%M:%SZ").to_string())
@@ -70,7 +65,6 @@ pub struct HeldSession {
     pub id: u32,
     pub name: String,
     pub session_type: String,
-    pub status: String,
     pub count: u32,
     pub ts: u64,
     pub synced: bool,
@@ -82,7 +76,6 @@ pub struct SessionMeta {
     pub device_id: String,
     pub name: String,
     pub session_type: u8,
-    pub status: u8,
     pub created_at: i64,
     pub tag_count: u32,
     pub synced: bool,
@@ -194,14 +187,13 @@ pub async fn connect(adapter: &Adapter, device_id: &str) -> Result<BleConn, Stri
 // ---------------------------------------------------------------------------
 
 pub async fn read_session_list(conn: &BleConn) -> Result<Vec<HeldSession>, String> {
-    // Raw shape from handheld — integers for type/status
+    // Raw shape from handheld — integers for type
     #[derive(Deserialize)]
     struct Raw {
         id: u32,
         name: String,
         #[serde(rename = "type")]
         session_type: u8,
-        status: u8,
         count: u32,
         ts: u64,
         synced: u8,
@@ -250,7 +242,6 @@ pub async fn read_session_list(conn: &BleConn) -> Result<Vec<HeldSession>, Strin
             id: r.id,
             name: r.name,
             session_type: session_type_str(r.session_type).to_string(),
-            status: session_status_str(r.status).to_string(),
             count: r.count,
             ts: r.ts,
             synced: r.synced != 0,
@@ -366,7 +357,6 @@ pub async fn read_session_meta(conn: &BleConn, session_id: u32) -> Result<Sessio
         name: String,
         #[serde(rename = "type")]
         session_type: u8,
-        status: u8,
         created_at: i64,
         tag_count: u32,
         synced: u8,
@@ -399,7 +389,6 @@ pub async fn read_session_meta(conn: &BleConn, session_id: u32) -> Result<Sessio
         device_id: raw.device_id,
         name: raw.name,
         session_type: raw.session_type,
-        status: raw.status,
         created_at: raw.created_at,
         tag_count: raw.tag_count,
         synced: raw.synced != 0,

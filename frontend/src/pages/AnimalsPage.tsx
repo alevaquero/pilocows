@@ -11,7 +11,6 @@ function RegisterAnimalModal({ onClose, onCreated }: { onClose: () => void; onCr
   const { t } = useTranslation()
   const [tags, setTags] = useState<Tag[]>([])
   const [tagId, setTagId] = useState<string>('')
-  const [name, setName] = useState('')
   const [breed, setBreed] = useState(BREEDS[0])
   const [category, setCategory] = useState(CATEGORIES[0])
   const [sex, setSex] = useState('female')
@@ -33,7 +32,7 @@ function RegisterAnimalModal({ onClose, onCreated }: { onClose: () => void; onCr
     try {
       const created = await animalsApi.create({
         tag_id: Number(tagId),
-        name, breed, category, sex,
+        breed, category, sex,
         dob: dob || undefined,
         notes,
       })
@@ -70,9 +69,6 @@ function RegisterAnimalModal({ onClose, onCreated }: { onClose: () => void; onCr
           }
         </select>
       </Field>
-      <Field label={t('animals.name')}>
-        <input className={inputCls} value={name} onChange={e => setName(e.target.value)} />
-      </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label={t('animals.breed')}>
           <select className={inputCls} value={breed} onChange={e => setBreed(e.target.value)}>
@@ -105,24 +101,23 @@ function RegisterAnimalModal({ onClose, onCreated }: { onClose: () => void; onCr
 
 // ── Sorting / filtering types ─────────────────────────────────────────────────
 
-type ColKey = 'tag_number' | 'name' | 'breed' | 'category' | 'sex' | 'is_active'
+type ColKey = 'tag_number' | 'breed' | 'category' | 'sex' | 'is_active' | 'notes'
 type SortDir = 'asc' | 'desc'
 
 interface SortState { col: ColKey; dir: SortDir }
 
 interface Filters {
   eid: string
-  name: string
   breed: string
   category: string
   sex: string
   status: string   // '' | 'active' | 'removed'
 }
 
-const EMPTY_FILTERS: Filters = { eid: '', name: '', breed: '', category: '', sex: '', status: 'active' }
+const EMPTY_FILTERS: Filters = { eid: '', breed: '', category: '', sex: '', status: 'active' }
 
 function hasActiveFilters(f: Filters): boolean {
-  return f.eid !== '' || f.name !== '' || f.breed !== '' ||
+  return f.eid !== '' || f.breed !== '' ||
     f.category !== '' || f.sex !== '' || f.status !== 'active'
 }
 
@@ -181,12 +176,10 @@ export default function AnimalsPage() {
   }
 
   const visible = useMemo(() => {
-    const eid  = filters.eid.toLowerCase()
-    const name = filters.name.toLowerCase()
+    const eid = filters.eid.toLowerCase()
 
     let rows = allAnimals.filter(a => {
       if (eid  && !a.tag_number.toLowerCase().includes(eid))             return false
-      if (name && !a.name.toLowerCase().includes(name))                  return false
       if (filters.breed    && a.breed    !== filters.breed)              return false
       if (filters.category && a.category !== filters.category)           return false
       if (filters.sex      && a.sex      !== filters.sex)                return false
@@ -200,11 +193,11 @@ export default function AnimalsPage() {
         let av: string | number, bv: string | number
         switch (sort.col) {
           case 'tag_number': av = a.tag_number; bv = b.tag_number; break
-          case 'name':       av = a.name;       bv = b.name;       break
           case 'breed':      av = a.breed;      bv = b.breed;      break
           case 'category':   av = a.category;   bv = b.category;   break
           case 'sex':        av = a.sex;        bv = b.sex;        break
           case 'is_active':  av = a.is_active ? 1 : 0; bv = b.is_active ? 1 : 0; break
+          case 'notes':      av = a.notes;      bv = b.notes;      break
         }
         const cmp = av < bv ? -1 : av > bv ? 1 : 0
         return sort.dir === 'asc' ? cmp : -cmp
@@ -254,21 +247,17 @@ export default function AnimalsPage() {
               {/* Sortable column headers */}
               <tr className="border-b border-slate-100 bg-slate-50">
                 <SortTh col="tag_number" sort={sort} onSort={toggleSort}>EID</SortTh>
-                <SortTh col="name"       sort={sort} onSort={toggleSort}>{t('animals.name')}</SortTh>
                 <SortTh col="breed"      sort={sort} onSort={toggleSort}>{t('animals.breed')}</SortTh>
                 <SortTh col="category"   sort={sort} onSort={toggleSort}>{t('animals.category')}</SortTh>
                 <SortTh col="sex"        sort={sort} onSort={toggleSort}>{t('animals.sex')}</SortTh>
                 <SortTh col="is_active"  sort={sort} onSort={toggleSort}>{t('animals.status')}</SortTh>
+                <SortTh col="notes"      sort={sort} onSort={toggleSort}>{t('animals.notes')}</SortTh>
               </tr>
               {/* Per-column filter inputs */}
               <tr className="border-b border-slate-200 bg-slate-50">
                 <th className="px-3 py-2">
                   <input className={filterCls} value={filters.eid}
                     onChange={set('eid')} placeholder="EID…" />
-                </th>
-                <th className="px-3 py-2">
-                  <input className={filterCls} value={filters.name}
-                    onChange={set('name')} placeholder={`${t('animals.name')}…`} />
                 </th>
                 <th className="px-3 py-2">
                   <select className={filterCls} value={filters.breed} onChange={set('breed')}>
@@ -296,6 +285,7 @@ export default function AnimalsPage() {
                     <option value="removed">{t('animals.removed')}</option>
                   </select>
                 </th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -312,7 +302,6 @@ export default function AnimalsPage() {
                   onClick={() => navigate(`/animals/${a.id}`)}
                 >
                   <td className="px-4 py-3 font-mono text-slate-800">{a.tag_number}</td>
-                  <td className="px-4 py-3 text-slate-800 font-medium">{a.name || '—'}</td>
                   <td className="px-4 py-3 text-slate-600">{a.breed}</td>
                   <td className="px-4 py-3 text-slate-600">{t(`animals.${a.category}`)}</td>
                   <td className="px-4 py-3 text-slate-600">{t(`animals.${a.sex}`)}</td>
@@ -322,6 +311,9 @@ export default function AnimalsPage() {
                     }`}>
                       {a.is_active ? t('animals.active') : t('animals.removed')}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-400 max-w-[200px] truncate" title={a.notes}>
+                    {a.notes || ''}
                   </td>
                 </tr>
               ))}

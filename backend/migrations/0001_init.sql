@@ -18,7 +18,6 @@ CREATE TABLE IF NOT EXISTS tags (
 CREATE TABLE IF NOT EXISTS animals (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     tag_id      INTEGER NOT NULL REFERENCES tags(id) ON DELETE RESTRICT,
-    name        TEXT    NOT NULL DEFAULT '',
     breed       TEXT    NOT NULL DEFAULT '',
     category    TEXT    NOT NULL DEFAULT '',  -- e.g. cow, heifer, bull, calf
     sex         TEXT    NOT NULL DEFAULT '',  -- M / F

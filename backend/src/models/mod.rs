@@ -26,7 +26,6 @@ pub struct CreateTag {
 pub struct Animal {
     pub id: i64,
     pub tag_id: i64,
-    pub name: String,
     pub breed: String,
     pub category: String,
     pub sex: String,
@@ -42,7 +41,6 @@ pub struct AnimalWithTag {
     pub id: i64,
     pub tag_id: i64,
     pub tag_number: String,
-    pub name: String,
     pub breed: String,
     pub category: String,
     pub sex: String,
@@ -56,7 +54,6 @@ pub struct AnimalWithTag {
 #[derive(Debug, Deserialize)]
 pub struct CreateAnimal {
     pub tag_id: i64,
-    pub name: String,
     pub breed: String,
     pub category: String,
     pub sex: String,
@@ -67,7 +64,6 @@ pub struct CreateAnimal {
 
 #[derive(Debug, Deserialize, Default)]
 pub struct PatchAnimal {
-    pub name: Option<String>,
     pub breed: Option<String>,
     pub category: Option<String>,
     pub sex: Option<String>,
@@ -285,7 +281,6 @@ pub struct Session {
     pub name: String,
     #[sqlx(rename = "type")]
     pub session_type: i64,
-    pub status: i64,
     pub created_at: String,
     pub tag_count: i64,
     pub handheld_note: String,
@@ -304,7 +299,6 @@ pub struct SessionSummary {
     pub name: String,
     #[sqlx(rename = "type")]
     pub session_type: i64,
-    pub status: i64,
     pub created_at: String,
     pub tag_count: i64,
     pub handheld_note: String,
@@ -324,9 +318,9 @@ pub struct SessionRecord {
     pub scanned_at: String,
     pub event_data: String,  // JSON blob
     pub note: String,
-    // Joined from tags/animals — NULL when EID is not registered.
-    pub animal_id: Option<i64>,
-    pub animal_name: Option<String>,
+    // Joined from tags/animals — indicates registration state.
+    pub tag_registered: bool,  // true if EID exists in tags table
+    pub animal_id: Option<i64>, // set if an active animal is linked to the tag
 }
 
 /// Full session detail: session metadata + all records.
@@ -347,7 +341,6 @@ pub struct IncomingSession {
     pub name: String,
     #[serde(rename = "type")]
     pub session_type: i64,
-    pub status: i64,
     pub created_at: i64,    // Unix timestamp from handheld
     pub tag_count: i64,
     #[serde(default)]

@@ -73,7 +73,6 @@ function EditAnimalModal({ profile, onClose, onSaved }: {
   profile: AnimalProfile; onClose: () => void; onSaved: (a: AnimalProfile) => void
 }) {
   const { t } = useTranslation()
-  const [name, setName] = useState(profile.name)
   const [breed, setBreed] = useState(profile.breed)
   const [category, setCategory] = useState(profile.category)
   const [sex, setSex] = useState(profile.sex)
@@ -86,7 +85,7 @@ function EditAnimalModal({ profile, onClose, onSaved }: {
     setSaving(true)
     try {
       const updated = await animalsApi.patch(profile.id, {
-        name, breed, category, sex, dob: dob || undefined, notes,
+        breed, category, sex, dob: dob || undefined, notes,
       })
       onSaved({ ...profile, ...updated })
       onClose()
@@ -102,9 +101,6 @@ function EditAnimalModal({ profile, onClose, onSaved }: {
       </div>
     }>
       {error && <p className="mb-3 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-      <Field label={t('animals.name')}>
-        <input className={inputCls} value={name} onChange={e => setName(e.target.value)} />
-      </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label={t('animals.breed')}>
           <input list="breeds" className={inputCls} value={breed} onChange={e => setBreed(e.target.value)} />
@@ -527,9 +523,8 @@ export default function AnimalDetailPage() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-xs font-mono text-slate-400 mb-1 select-text cursor-text">{profile.tag_number}</p>
-            <h2 className="text-2xl font-bold text-slate-800 select-text cursor-text">{profile.name || '—'}</h2>
-            <p className="text-slate-500 mt-1 select-text cursor-text">
+            <h2 className="text-2xl font-bold font-mono text-slate-800 select-text cursor-text mb-1">{profile.tag_number}</h2>
+            <p className="text-slate-500 select-text cursor-text">
               {profile.breed} · {t(`animals.${profile.category}`)} · {t(`animals.${profile.sex}`)}{profile.dob ? ` · ${profile.dob}` : ''}
             </p>
             {profile.notes && <p className="text-sm text-slate-400 mt-1 select-text cursor-text">{profile.notes}</p>}

@@ -1,5 +1,6 @@
 #include "ui_popup.h"
 #include "lvgl.h"
+#include "fonts.h"
 
 // ── Popup geometry ────────────────────────────────────────────────────────────
 // Centered on 480×320. Box: 440×160 at (20, 80).
@@ -43,7 +44,7 @@ static void popup_show(const char *msg, lv_color_t bg_color, lv_color_t text_col
     lv_label_set_text(lbl, msg);
     lv_label_set_long_mode(lbl, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(lbl, POPUP_W - 28);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(lbl, &pilocows_font_20, LV_PART_MAIN);
     lv_obj_set_style_text_color(lbl, text_color, LV_PART_MAIN);
     lv_obj_align(lbl, LV_ALIGN_TOP_MID, 0, 0);
 
@@ -58,7 +59,7 @@ static void popup_show(const char *msg, lv_color_t bg_color, lv_color_t text_col
 
     lv_obj_t *btn_lbl = lv_label_create(btn);
     lv_label_set_text(btn_lbl, "OK");
-    lv_obj_set_style_text_font(btn_lbl, &lv_font_montserrat_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(btn_lbl, &pilocows_font_20, LV_PART_MAIN);
     lv_obj_set_style_text_color(btn_lbl, bg_color, LV_PART_MAIN);
     lv_obj_center(btn_lbl);
 }

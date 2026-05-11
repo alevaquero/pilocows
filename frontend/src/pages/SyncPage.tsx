@@ -187,7 +187,7 @@ export default function SyncPage() {
         const date = new Date(s.ts * 1000).toLocaleDateString()
         dlog.dbg(
           `  id=${s.id}  name="${s.name}"  type=${s.session_type}` +
-          `  status=${s.status}  count=${s.count}  date=${date}` +
+          `  count=${s.count}  date=${date}` +
           `  synced=${s.synced}`
         )
       })
@@ -237,7 +237,7 @@ export default function SyncPage() {
     try {
       // Step 1a — read SESSION_META
       dlog.log(`  [1/4] Reading SESSION_META for session ${session.id}…`)
-      const meta = await invoke<{ id: number; device_id: string; name: string; session_type: number; status: number; created_at: number; tag_count: number; synced: boolean; note: string }>('ble_read_session_meta', {
+      const meta = await invoke<{ id: number; device_id: string; name: string; session_type: number; created_at: number; tag_count: number; synced: boolean; note: string }>('ble_read_session_meta', {
         sessionId: session.id,
       })
       dlog.log(`  [1/4] SESSION_META: name="${meta.name}" type=${meta.session_type} device=${meta.device_id}`)
@@ -269,7 +269,6 @@ export default function SyncPage() {
         device_id: meta.device_id,
         name: meta.name,
         type: meta.session_type,
-        status: meta.status,
         created_at: meta.created_at,
         tag_count: meta.tag_count,
         note: meta.note,
@@ -572,13 +571,6 @@ function SessionCard({ session, syncState, onSync, onDelete, onRegisterTag, t }:
         <div>
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-slate-800">{session.name}</span>
-            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-              session.status === 'open'
-                ? 'bg-green-100 text-green-700'
-                : 'bg-slate-100 text-slate-500'
-            }`}>
-              {session.status === 'open' ? t('sync.session_open') : t('sync.session_closed')}
-            </span>
             {(session.synced || isDone) && (
               <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
                 {t('sync.session_synced')}

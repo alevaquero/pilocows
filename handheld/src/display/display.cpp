@@ -19,6 +19,14 @@ static esp_lcd_panel_handle_t   s_panel      = NULL;
 static esp_lcd_touch_handle_t   s_touch      = NULL;
 static lv_disp_t               *s_lvgl_disp  = NULL;
 
+// Touch calibration offsets applied in process_coordinates.
+// TOUCH_Y_OFFSET: subtract from x[i] → shifts registered point downward.
+// TOUCH_X_OFFSET: subtract from y[i] → shifts registered point leftward.
+// (Adding to y[i] was empirically observed to move the point RIGHT, so we subtract.)
+static constexpr uint16_t TOUCH_Y_OFFSET = 0;
+static constexpr uint16_t TOUCH_X_OFFSET = 10;
+
+
 // ---------------------------------------------------------------------------
 // Backlight — LEDC PWM on LCD_PIN_BL
 // ---------------------------------------------------------------------------
@@ -188,19 +196,35 @@ static esp_err_t touch_init(esp_lcd_panel_io_handle_t lcd_io)
     // We need: x_out = y_raw [0,480], y_out = (320 - x_raw) [0,320].
     // Before swap: x_pre = (320 - x_raw) via mirror_x(x_max=320), y_pre = y_raw (no mirror).
     // After swap:  x_out = y_pre = y_raw, y_out = x_pre = 320 - x_raw. ✓
+    //
+    // TOUCH_Y_OFFSET: the touch panel reads slightly high relative to the display.
+    // Subtracting N from x_raw (portrait) adds N to the landscape y_out, shifting
+    // touch registration down.  Increase if touches still register too high;
+    // decrease (or negate) if they overshoot.
     esp_lcd_touch_config_t tp_cfg = {
-        .x_max         = LCD_V_RES,     // IC portrait x range (320); used by mirror_x
-        .y_max         = LCD_H_RES,     // IC portrait y range (480); unused (mirror_y=0)
-        .rst_gpio_num  = GPIO_NUM_NC,   // Reset already done with LCD
-        .int_gpio_num  = (gpio_num_t)TOUCH_PIN_INT,
+        .x_max              = LCD_V_RES,     // IC portrait x range (320); used by mirror_x
+        .y_max              = LCD_H_RES,     // IC portrait y range (480); unused (mirror_y=0)
+        .rst_gpio_num       = GPIO_NUM_NC,   // Reset already done with LCD
+        .int_gpio_num       = (gpio_num_t)TOUCH_PIN_INT,
         .levels = {
-            .reset     = 0,
-            .interrupt = 0,
+            .reset          = 0,
+            .interrupt      = 0,
         },
         .flags = {
-            .swap_xy   = 1,
-            .mirror_x  = 1,
-            .mirror_y  = 0,
+            .swap_xy        = 1,
+            .mirror_x       = 1,
+            .mirror_y       = 0,
+        },
+        .process_coordinates = [](esp_lcd_touch_handle_t, uint16_t *x, uint16_t *y,
+                                   uint16_t *, uint8_t *point_num, uint8_t max_num) {
+            // TOUCH_Y_OFFSET: subtract from portrait-x → shifts landscape Y downward.
+            // TOUCH_X_OFFSET: add to portrait-y → shifts landscape X leftward
+            //   (landscape_x = x_max - portrait_y after mirror_x, so adding here subtracts).
+            (void)max_num;
+            for (uint8_t i = 0; i < *point_num; ++i) {
+                x[i] = (x[i] >= TOUCH_Y_OFFSET) ? (x[i] - TOUCH_Y_OFFSET) : 0;
+                y[i] = (y[i] >= TOUCH_X_OFFSET) ? (y[i] - TOUCH_X_OFFSET) : 0;
+            }
         },
     };
     err = esp_lcd_touch_new_i2c_ft5x06(tp_io, &tp_cfg, &s_touch);
@@ -296,3 +320,4 @@ void display_lvgl_unlock(void)
 {
     lvgl_port_unlock();
 }
+

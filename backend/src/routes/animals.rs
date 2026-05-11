@@ -127,12 +127,11 @@ pub async fn create_animal(
             .await?;
 
     let animal = sqlx::query_as::<_, Animal>(
-        "INSERT INTO animals (tag_id, name, breed, category, sex, dob, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO animals (tag_id, breed, category, sex, dob, notes)
+         VALUES (?, ?, ?, ?, ?, ?)
          RETURNING *",
     )
     .bind(body.tag_id)
-    .bind(&body.name)
     .bind(&body.breed)
     .bind(&body.category)
     .bind(&body.sex)
@@ -160,7 +159,6 @@ pub async fn patch_animal(
         .await?
         .ok_or(AppError::NotFound)?;
 
-    let name = body.name.unwrap_or(existing.name);
     let breed = body.breed.unwrap_or(existing.breed);
     let category = body.category.unwrap_or(existing.category);
     let sex = body.sex.unwrap_or(existing.sex);
@@ -173,13 +171,12 @@ pub async fn patch_animal(
 
     let animal = sqlx::query_as::<_, Animal>(
         "UPDATE animals
-         SET name = ?, breed = ?, category = ?, sex = ?, dob = ?, notes = ?,
+         SET breed = ?, category = ?, sex = ?, dob = ?, notes = ?,
              is_active = ?,
              updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
          WHERE id = ?
          RETURNING *",
     )
-    .bind(&name)
     .bind(&breed)
     .bind(&category)
     .bind(&sex)

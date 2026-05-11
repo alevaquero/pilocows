@@ -14,7 +14,66 @@ import { animalsApi, BREEDS, CATEGORIES } from '../api/animals'
 import { tagsApi, type Tag } from '../api/tags'
 import Modal, { Field, inputCls } from '../components/Modal'
 
-// ── Register Animal modal (used when clicking an unregistered EID) ────────────
+// ── Register Tag modal (used when clicking an EID not in the tag inventory) ───
+
+function RegisterTagModal({
+  eid,
+  onClose,
+  onCreated,
+}: {
+  eid: string
+  onClose: () => void
+  onCreated: () => void
+}) {
+  const { t } = useTranslation()
+  const [purchasedAt, setPurchasedAt] = useState(new Date().toISOString().slice(0, 10))
+  const [notes, setNotes] = useState('')
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const submit = async () => {
+    setSaving(true)
+    try {
+      await tagsApi.create({ tag_number: eid, purchased_at: purchasedAt, notes })
+      onCreated()
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal
+      title={`${t('tags.add')} — ${eid}`}
+      onClose={onClose}
+      footer={
+        <div className="flex gap-2 justify-end w-full">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50">
+            {t('common.cancel')}
+          </button>
+          <button onClick={submit} disabled={saving} className="px-4 py-2 text-sm rounded-lg bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50">
+            {saving ? t('common.loading') : t('common.save')}
+          </button>
+        </div>
+      }
+    >
+      {error && <p className="mb-3 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+      <Field label={t('tags.tag_number')}>
+        <input className={inputCls} value={eid} readOnly />
+      </Field>
+      <Field label={t('tags.purchased_at')}>
+        <input type="date" className={inputCls} value={purchasedAt} onChange={e => setPurchasedAt(e.target.value)} />
+      </Field>
+      <Field label={t('tags.notes')}>
+        <textarea className={inputCls} rows={2} value={notes} onChange={e => setNotes(e.target.value)} />
+      </Field>
+    </Modal>
+  )
+}
+
+// ── Register Animal modal (used when clicking an EID with no animal linked) ───
 
 function RegisterAnimalModal({
   eid,
@@ -28,7 +87,6 @@ function RegisterAnimalModal({
   const { t } = useTranslation()
   const [tags, setTags] = useState<Tag[]>([])
   const [tagId, setTagId] = useState<string>('')
-  const [name, setName] = useState('')
   const [breed, setBreed] = useState(BREEDS[0])
   const [category, setCategory] = useState(CATEGORIES[0])
   const [sex, setSex] = useState('female')
@@ -53,7 +111,7 @@ function RegisterAnimalModal({
     try {
       await animalsApi.create({
         tag_id: Number(tagId),
-        name, breed, category, sex,
+        breed, category, sex,
         dob: dob || undefined,
         notes,
       })
@@ -89,9 +147,6 @@ function RegisterAnimalModal({
             : tags.map(tag => <option key={tag.id} value={tag.id}>{tag.tag_number}</option>)
           }
         </select>
-      </Field>
-      <Field label={t('animals.name')}>
-        <input className={inputCls} value={name} onChange={e => setName(e.target.value)} />
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label={t('animals.breed')}>
@@ -218,11 +273,11 @@ function DeleteConfirmModal({ onClose, onConfirm }: { onClose: () => void; onCon
 
 // ── Sort / filter types ───────────────────────────────────────────────────────
 
-type ColKey = 'eid' | 'animal_name' | 'scanned_at' | 'event_summary' | 'note'
+type ColKey = 'eid' | 'registered' | 'scanned_at' | 'event_summary' | 'note'
 type SortDir = 'asc' | 'desc'
 interface SortState { col: ColKey; dir: SortDir }
-interface Filters { eid: string; animal: string }
-const EMPTY_FILTERS: Filters = { eid: '', animal: '' }
+interface Filters { eid: string }
+const EMPTY_FILTERS: Filters = { eid: '' }
 
 // ── Sortable column header ────────────────────────────────────────────────────
 
@@ -251,6 +306,29 @@ const filterCls = 'w-full text-xs border border-slate-200 rounded px-2 py-1 bg-w
 
 // ── Record row ────────────────────────────────────────────────────────────────
 
+function RegistrationBadge({ record }: { record: DbSessionRecord }) {
+  const { t } = useTranslation()
+  if (record.animal_id != null) {
+    return (
+      <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+        {t('sessions.registered')}
+      </span>
+    )
+  }
+  if (record.tag_registered) {
+    return (
+      <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+        {t('sessions.tag_only')}
+      </span>
+    )
+  }
+  return (
+    <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
+      {t('sessions.unknown_animal')}
+    </span>
+  )
+}
+
 function RecordRow({
   record,
   eventSummary,
@@ -268,11 +346,7 @@ function RecordRow({
       onClick={onClick}
     >
       <td className="px-4 py-2.5 font-mono text-xs text-slate-800">{record.eid}</td>
-      <td className="px-4 py-2.5 text-sm text-slate-700">
-        <span className={record.animal_name ? 'font-medium' : 'text-slate-400'}>
-          {record.animal_name || '—'}
-        </span>
-      </td>
+      <td className="px-4 py-2.5"><RegistrationBadge record={record} /></td>
       <td className="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">{time}</td>
       <td className="px-4 py-2.5 text-sm text-slate-700">{eventSummary || '—'}</td>
       <td className="px-4 py-2.5 text-xs text-slate-400 max-w-[160px] truncate" title={record.note}>
@@ -295,7 +369,8 @@ export default function SessionDetailPage() {
 
   const [showEdit, setShowEdit] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
-  const [registerEid, setRegisterEid] = useState<string | null>(null)
+  const [registerTagEid, setRegisterTagEid] = useState<string | null>(null)
+  const [registerAnimalEid, setRegisterAnimalEid] = useState<string | null>(null)
 
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS)
   const [sort, setSort] = useState<SortState | null>(null)
@@ -323,8 +398,10 @@ export default function SessionDetailPage() {
   const handleRowClick = useCallback((record: DbSessionRecord) => {
     if (record.animal_id != null) {
       navigate(`/animals/${record.animal_id}`)
+    } else if (!record.tag_registered) {
+      setRegisterTagEid(record.eid)
     } else {
-      setRegisterEid(record.eid)
+      setRegisterAnimalEid(record.eid)
     }
   }, [navigate])
 
@@ -338,25 +415,24 @@ export default function SessionDetailPage() {
 
   const visible = useMemo(() => {
     if (!session) return []
-    const eid    = filters.eid.toLowerCase()
-    const animal = filters.animal.toLowerCase()
+    const eid = filters.eid.toLowerCase()
 
     let rows = session.records.filter(r => {
-      if (eid    && !r.eid.toLowerCase().includes(eid))                          return false
-      if (animal && !(r.animal_name ?? '').toLowerCase().includes(animal))       return false
+      if (eid && !r.eid.toLowerCase().includes(eid)) return false
       return true
     })
 
     if (sort) {
       rows = [...rows].sort((a, b) => {
-        let av: string, bv: string
+        let av: string | number, bv: string | number
         switch (sort.col) {
-          case 'eid':          av = a.eid;          bv = b.eid;          break
-          case 'animal_name':  av = a.animal_name ?? ''; bv = b.animal_name ?? ''; break
-          case 'scanned_at':   av = a.scanned_at;   bv = b.scanned_at;   break
+          case 'eid':        av = a.eid;        bv = b.eid;        break
+          case 'registered': av = a.animal_id != null ? 2 : a.tag_registered ? 1 : 0;
+                             bv = b.animal_id != null ? 2 : b.tag_registered ? 1 : 0; break
+          case 'scanned_at': av = a.scanned_at; bv = b.scanned_at; break
           case 'event_summary':
-            av = formatEventData(a.event_data, session.session_type)
-            bv = formatEventData(b.event_data, session.session_type)
+            av = formatEventData(a.event_data, session.session_type, t)
+            bv = formatEventData(b.event_data, session.session_type, t)
             break
           case 'note': av = a.note; bv = b.note; break
         }
@@ -406,13 +482,6 @@ export default function SessionDetailPage() {
             <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
               {t(typeKey)}
             </span>
-            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-              session.status === 0
-                ? 'bg-green-50 text-green-600'
-                : 'bg-slate-100 text-slate-500'
-            }`}>
-              {session.status === 0 ? t('sessions.status_open') : t('sessions.status_closed')}
-            </span>
           </div>
           <p className="text-xs text-slate-400">{date} · {session.device_id}</p>
         </div>
@@ -455,7 +524,7 @@ export default function SessionDetailPage() {
             </span>
           )}
         </h3>
-        {(filters.eid || filters.animal) && (
+        {filters.eid && (
           <button
             onClick={() => setFilters(EMPTY_FILTERS)}
             className="text-xs text-slate-500 hover:text-slate-800 underline"
@@ -472,11 +541,11 @@ export default function SessionDetailPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
-                <SortTh col="eid"          sort={sort} onSort={toggleSort}>{t('sessions.col_eid')}</SortTh>
-                <SortTh col="animal_name"  sort={sort} onSort={toggleSort}>{t('sessions.col_animal')}</SortTh>
-                <SortTh col="scanned_at"   sort={sort} onSort={toggleSort}>{t('sessions.col_time')}</SortTh>
+                <SortTh col="eid"           sort={sort} onSort={toggleSort}>{t('sessions.col_eid')}</SortTh>
+                <SortTh col="registered"    sort={sort} onSort={toggleSort}>{t('sessions.col_registered')}</SortTh>
+                <SortTh col="scanned_at"    sort={sort} onSort={toggleSort}>{t('sessions.col_time')}</SortTh>
                 <SortTh col="event_summary" sort={sort} onSort={toggleSort}>{t('sessions.col_data')}</SortTh>
-                <SortTh col="note"         sort={sort} onSort={toggleSort}>{t('sessions.col_note')}</SortTh>
+                <SortTh col="note"          sort={sort} onSort={toggleSort}>{t('sessions.col_note')}</SortTh>
               </tr>
               <tr className="border-b border-slate-200 bg-slate-50">
                 <th className="px-3 py-2">
@@ -484,12 +553,7 @@ export default function SessionDetailPage() {
                     onChange={e => setFilters(f => ({ ...f, eid: e.target.value }))}
                     placeholder="EID…" />
                 </th>
-                <th className="px-3 py-2">
-                  <input className={filterCls} value={filters.animal}
-                    onChange={e => setFilters(f => ({ ...f, animal: e.target.value }))}
-                    placeholder={`${t('sessions.col_animal')}…`} />
-                </th>
-                <th /><th /><th />
+                <th /><th /><th /><th />
               </tr>
             </thead>
             <tbody>
@@ -503,7 +567,7 @@ export default function SessionDetailPage() {
                 <RecordRow
                   key={r.id}
                   record={r}
-                  eventSummary={formatEventData(r.event_data, session.session_type)}
+                  eventSummary={formatEventData(r.event_data, session.session_type, t)}
                   onClick={() => handleRowClick(r)}
                 />
               ))}
@@ -528,12 +592,20 @@ export default function SessionDetailPage() {
           onConfirm={handleDelete}
         />
       )}
-      {registerEid && (
-        <RegisterAnimalModal
-          eid={registerEid}
-          onClose={() => setRegisterEid(null)}
+      {registerTagEid && (
+        <RegisterTagModal
+          eid={registerTagEid}
+          onClose={() => setRegisterTagEid(null)}
           onCreated={() => {
-            // Reload session to reflect the newly registered animal
+            sessionsApi.get(session.id).then(setSession).catch(() => {})
+          }}
+        />
+      )}
+      {registerAnimalEid && (
+        <RegisterAnimalModal
+          eid={registerAnimalEid}
+          onClose={() => setRegisterAnimalEid(null)}
+          onCreated={() => {
             sessionsApi.get(session.id).then(setSession).catch(() => {})
           }}
         />

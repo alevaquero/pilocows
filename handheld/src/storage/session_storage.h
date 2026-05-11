@@ -25,10 +25,8 @@ typedef enum {
     SESSION_TYPE_COUNT
 } session_type_t;
 
-// ── Session status ────────────────────────────────────────────────────────────
-#define SESSION_STATUS_OPEN    ((uint8_t)0x00)
-#define SESSION_STATUS_CLOSED  ((uint8_t)0x01)
-#define SESSION_STATUS_DELETED ((uint8_t)0xFF)
+// ── Session deletion marker (internal — not exposed as open/closed) ──────────
+// _deleted == 0: normal session. _deleted != 0: tombstoned (treat as gone).
 
 // ── Per-tag data payload types ────────────────────────────────────────────────
 typedef enum {
@@ -53,7 +51,7 @@ typedef struct __attribute__((packed)) {
     uint32_t id;                        //   4 — 1-based; 0 = tombstone
     char     name[SESSION_NAME_MAX];    //  64 — display name, user-editable
     uint8_t  type;                      //   1 — session_type_t
-    uint8_t  status;                    //   1 — SESSION_STATUS_*
+    uint8_t  _deleted;                  //   1 — 0=normal, 1=tombstoned (internal)
     time_t   created_at;                //   4 — Unix timestamp (UTC)
     uint32_t tag_count;                 //   4 — unique animals in this session
     uint8_t  vax_count;                 //   1 — vaccines selected (type VACCINATION only)
@@ -100,7 +98,7 @@ esp_err_t session_storage_init(void);
 
 // ── Session management ────────────────────────────────────────────────────────
 
-// Create a new OPEN session, auto-naming it "YYYY-MM-DD <type>" if name is NULL.
+// Create a new session, auto-naming it "YYYY-MM-DD <type>" if name is NULL.
 // vax_ids / vax_count are only used for SESSION_TYPE_VACCINATION.
 // Sets the new session as the active session.
 // Returns the new session ID in *out_id (may be NULL).
@@ -108,16 +106,11 @@ esp_err_t session_create(session_type_t type, const char *name,
                           const uint8_t *vax_ids, uint8_t vax_count,
                           uint32_t *out_id);
 
-// Set an existing OPEN session as the active (current) session.
-// Fails if the session is CLOSED or DELETED.
+// Set an existing session as the active (current) session.
 esp_err_t session_set_active(uint32_t id);
 
-// Clear the active session pointer without closing or deleting it.
+// Clear the active session pointer without deleting it.
 void      session_clear_active(void);
-
-// Change the status of a session (OPEN ↔ CLOSED).
-// Closing the active session also clears the active pointer.
-esp_err_t session_set_status(uint32_t id, uint8_t status);
 
 // Copy active session metadata into *out. Returns false if no active session.
 bool      session_get_active(session_meta_t *out);
@@ -154,7 +147,7 @@ int session_list_records_paged(uint32_t session_id, tag_record_t *out,
 // Save a tag record for the active session.
 //   • If a record with the same EID exists → overwrite (tag_count unchanged).
 //   • If the EID is new → append, increment tag_count.
-// Returns ESP_ERR_INVALID_STATE if no OPEN session is active.
+// Returns ESP_ERR_INVALID_STATE if no active session.
 esp_err_t session_save_record(const tag_record_t *rec);
 
 // Look up a tag record by EID in the active session.
