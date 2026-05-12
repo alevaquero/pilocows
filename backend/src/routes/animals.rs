@@ -10,7 +10,7 @@ use crate::{
     error::{AppError, Result},
     models::{
         Animal, AnimalProfile, AnimalQuery, AnimalWithTag, CreateAnimal, PatchAnimal, Pregnancy,
-        Removal, TbTest, Vaccination, Weight,
+        Removal, Test, Vaccination, Weight,
     },
 };
 
@@ -76,8 +76,8 @@ pub async fn get_animal(
     .fetch_all(&pool)
     .await?;
 
-    let tb_tests = sqlx::query_as::<_, TbTest>(
-        "SELECT * FROM tb_tests WHERE animal_id = ? ORDER BY tested_at DESC",
+    let tests = sqlx::query_as::<_, Test>(
+        "SELECT * FROM tests WHERE animal_id = ? ORDER BY tested_at DESC",
     )
     .bind(id)
     .fetch_all(&pool)
@@ -99,7 +99,7 @@ pub async fn get_animal(
         animal,
         vaccinations,
         pregnancies,
-        tb_tests,
+        tests,
         weights,
         removal,
     }))

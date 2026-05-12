@@ -138,7 +138,7 @@ static int gatt_session_list_cb(uint16_t conn_handle, uint16_t attr_handle,
 // SESSION_DATA: returns JSON array of tag records for the selected session.
 // Format: [{"eid":"98200004321","ts":1745000000,"type":1,
 //           "weight_kg":480,"vaccines":"IBR-BVD","pregnancy":"pregnant",
-//           "tb_result":"negative","note":"paddock 3"}, ...]
+//           "test_result":"negative","test_name":"Brucella","note":"paddock 3"}, ...]
 //
 // Only fields relevant to the session type are included.
 // NimBLE handles Read Long automatically when data > MTU.
@@ -227,12 +227,16 @@ static int gatt_session_data_cb(uint16_t conn_handle, uint16_t attr_handle,
                 ",\"pregnancy\":\"%s\"", result);
             break;
         }
-        case SESSION_TYPE_TB_TEST: {
-            const char *result = r->data[0] == TB_POSITIVE  ? "positive"
-                               : r->data[0] == TB_NEGATIVE  ? "negative"
+        case SESSION_TYPE_TEST: {
+            const char *result = r->data[0] == TEST_POSITIVE ? "positive"
+                               : r->data[0] == TEST_NEGATIVE ? "negative"
                                : "inconclusive";
+            char tname[TEST_NAME_MAX] = "";
+            if (meta.test_id != 0) {
+                test_get_name(meta.test_id, tname, sizeof(tname));
+            }
             pos += snprintf(json_buf + pos, sizeof(json_buf) - pos,
-                ",\"tb_result\":\"%s\"", result);
+                ",\"test_result\":\"%s\",\"test_name\":\"%s\"", result, tname);
             break;
         }
         default: break;

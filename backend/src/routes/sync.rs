@@ -54,15 +54,16 @@ pub async fn sync_scans(
         // INSERT OR IGNORE is idempotent via idx_scan_events_dedup (eid, scanned_at).
         sqlx::query(
             "INSERT OR IGNORE INTO scan_events
-             (eid, event_type, scanned_at, weight_kg, pregnancy_result, tb_result, vaccines, notes, animal_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             (eid, event_type, scanned_at, weight_kg, pregnancy_result, test_result, test_name, vaccines, notes, animal_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&scan.eid)
         .bind(&scan.event_type)
         .bind(&scan.scanned_at)
         .bind(scan.weight_kg)
         .bind(scan.pregnancy_result.as_deref())
-        .bind(scan.tb_result.as_deref())
+        .bind(scan.test_result.as_deref())
+        .bind(scan.test_name.as_deref())
         .bind(&scan.vaccines)
         .bind(&scan.notes)
         .bind(animal_id)
@@ -124,14 +125,15 @@ async fn fan_out(pool: &SqlitePool, scan: &IncomingScan, animal_id: i64) -> Resu
             }
         }
 
-        "tb_test" => {
-            if let Some(result) = &scan.tb_result {
+        "test" => {
+            if let Some(result) = &scan.test_result {
                 sqlx::query(
-                    "INSERT OR IGNORE INTO tb_tests
-                     (animal_id, result, tested_at, notes)
-                     VALUES (?, ?, ?, ?)",
+                    "INSERT OR IGNORE INTO tests
+                     (animal_id, test_name, result, tested_at, notes)
+                     VALUES (?, ?, ?, ?, ?)",
                 )
                 .bind(animal_id)
+                .bind(scan.test_name.as_deref().unwrap_or(""))
                 .bind(result)
                 .bind(&scan.scanned_at)
                 .bind(&scan.notes)

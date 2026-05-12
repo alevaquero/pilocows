@@ -8,9 +8,9 @@ use sqlx::SqlitePool;
 use crate::{
     error::{AppError, Result},
     models::{
-        CreatePregnancy, CreateTbTest, CreateVaccination, CreateWeight,
-        PatchPregnancy, PatchTbTest, PatchVaccination, PatchWeight,
-        Pregnancy, TbTest, Vaccination, Weight,
+        CreatePregnancy, CreateTest, CreateVaccination, CreateWeight,
+        PatchPregnancy, PatchTest, PatchVaccination, PatchWeight,
+        Pregnancy, Test, Vaccination, Weight,
     },
 };
 
@@ -207,13 +207,13 @@ pub async fn delete_pregnancy(
 
 // ─── TB Tests ─────────────────────────────────────────────────────────────────
 
-pub async fn list_tb_tests(
+pub async fn list_tests(
     State(pool): State<SqlitePool>,
     Path(animal_id): Path<i64>,
-) -> Result<Json<Vec<TbTest>>> {
+) -> Result<Json<Vec<Test>>> {
     animal_exists(&pool, animal_id).await?;
-    let rows = sqlx::query_as::<_, TbTest>(
-        "SELECT * FROM tb_tests WHERE animal_id = ? ORDER BY tested_at DESC",
+    let rows = sqlx::query_as::<_, Test>(
+        "SELECT * FROM tests WHERE animal_id = ? ORDER BY tested_at DESC",
     )
     .bind(animal_id)
     .fetch_all(&pool)
@@ -221,11 +221,11 @@ pub async fn list_tb_tests(
     Ok(Json(rows))
 }
 
-pub async fn create_tb_test(
+pub async fn create_test(
     State(pool): State<SqlitePool>,
     Path(animal_id): Path<i64>,
-    Json(body): Json<CreateTbTest>,
-) -> Result<(StatusCode, Json<TbTest>)> {
+    Json(body): Json<CreateTest>,
+) -> Result<(StatusCode, Json<Test>)> {
     animal_exists(&pool, animal_id).await?;
     let allowed = ["positive", "negative", "inconclusive"];
     if !allowed.contains(&body.result.as_str()) {
@@ -233,12 +233,13 @@ pub async fn create_tb_test(
             "result must be positive, negative, or inconclusive".into(),
         ));
     }
-    let row = sqlx::query_as::<_, TbTest>(
-        "INSERT INTO tb_tests (animal_id, result, tested_at, notes)
-         VALUES (?, ?, ?, ?)
+    let row = sqlx::query_as::<_, Test>(
+        "INSERT INTO tests (animal_id, test_name, result, tested_at, notes)
+         VALUES (?, ?, ?, ?, ?)
          RETURNING *",
     )
     .bind(animal_id)
+    .bind(&body.test_name)
     .bind(&body.result)
     .bind(&body.tested_at)
     .bind(&body.notes)
@@ -247,15 +248,15 @@ pub async fn create_tb_test(
     Ok((StatusCode::CREATED, Json(row)))
 }
 
-pub async fn patch_tb_test(
+pub async fn patch_test(
     State(pool): State<SqlitePool>,
-    Path((animal_id, tb_test_id)): Path<(i64, i64)>,
-    Json(body): Json<PatchTbTest>,
-) -> Result<Json<TbTest>> {
-    let existing = sqlx::query_as::<_, TbTest>(
-        "SELECT * FROM tb_tests WHERE id = ? AND animal_id = ?",
+    Path((animal_id, test_id)): Path<(i64, i64)>,
+    Json(body): Json<PatchTest>,
+) -> Result<Json<Test>> {
+    let existing = sqlx::query_as::<_, Test>(
+        "SELECT * FROM tests WHERE id = ? AND animal_id = ?",
     )
-    .bind(tb_test_id)
+    .bind(test_id)
     .bind(animal_id)
     .fetch_optional(&pool)
     .await?
@@ -270,25 +271,26 @@ pub async fn patch_tb_test(
         }
     }
 
-    let row = sqlx::query_as::<_, TbTest>(
-        "UPDATE tb_tests SET result = ?, tested_at = ?, notes = ?
+    let row = sqlx::query_as::<_, Test>(
+        "UPDATE tests SET test_name = ?, result = ?, tested_at = ?, notes = ?
          WHERE id = ? RETURNING *",
     )
+    .bind(body.test_name.unwrap_or(existing.test_name))
     .bind(body.result.unwrap_or(existing.result))
     .bind(body.tested_at.unwrap_or(existing.tested_at))
     .bind(body.notes.unwrap_or(existing.notes))
-    .bind(tb_test_id)
+    .bind(test_id)
     .fetch_one(&pool)
     .await?;
     Ok(Json(row))
 }
 
-pub async fn delete_tb_test(
+pub async fn delete_test(
     State(pool): State<SqlitePool>,
-    Path((animal_id, tb_test_id)): Path<(i64, i64)>,
+    Path((animal_id, test_id)): Path<(i64, i64)>,
 ) -> Result<StatusCode> {
-    let deleted = sqlx::query("DELETE FROM tb_tests WHERE id = ? AND animal_id = ?")
-        .bind(tb_test_id)
+    let deleted = sqlx::query("DELETE FROM tests WHERE id = ? AND animal_id = ?")
+        .bind(test_id)
         .bind(animal_id)
         .execute(&pool)
         .await?;

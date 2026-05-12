@@ -34,7 +34,7 @@ static bool            s_eid_pending  = false;
 static uint16_t        s_weight_kg    = 0;   // last weight used in this session
 static uint32_t        s_weight_session_id = 0; // session that owns s_weight_kg (0 = none)
 static pregnancy_result_t s_preg      = PREGNANCY_UNKNOWN;
-static tb_result_t     s_tb           = TB_INCONCLUSIVE;
+static test_result_t   s_test_result  = TEST_INCONCLUSIVE;
 
 // ── Screen root ───────────────────────────────────────────────────────────────
 static lv_obj_t *s_scr = NULL;
@@ -76,10 +76,10 @@ static const pregnancy_result_t s_preg_btn_val[6] = {
     PREGNANCY_SMALL,   PREGNANCY_MEDIUM, PREGNANCY_BIG,
 };
 
-static lv_obj_t *s_panel_tb;
-static lv_obj_t *s_lbl_tb_title;
-static lv_obj_t *s_btn_tb[3];         // TB_INCONCLUSIVE, POSITIVE, NEGATIVE
-static lv_obj_t *s_lbl_tb[3];
+static lv_obj_t *s_panel_test;
+static lv_obj_t *s_lbl_test_title;    // shows the test name from session meta
+static lv_obj_t *s_btn_test[3];       // TEST_INCONCLUSIVE, POSITIVE, NEGATIVE
+static lv_obj_t *s_lbl_test[3];
 
 static lv_obj_t *s_panel_vax;
 static lv_obj_t *s_lbl_vax_title;
@@ -117,7 +117,7 @@ static void clear_status_cb(lv_timer_t *t);
 static void show_data_panel_for_type(uint8_t type);
 static void update_weight_label(void);
 static void update_preg_buttons(void);
-static void update_tb_buttons(void);
+static void update_test_buttons(void);
 static void open_animal_note_modal(void);
 static void close_animal_note_modal(void);
 
@@ -161,16 +161,16 @@ static void update_preg_buttons(void)
     }
 }
 
-static void update_tb_buttons(void)
+static void update_test_buttons(void)
 {
     for (int i = 0; i < 3; i++) {
-        bool sel = (s_tb == (tb_result_t)i);
-        lv_obj_set_style_bg_color(s_btn_tb[i],
+        bool sel = (s_test_result == (test_result_t)i);
+        lv_obj_set_style_bg_color(s_btn_test[i],
             sel ? lv_palette_main(LV_PALETTE_BLUE)
                 : lv_palette_lighten(LV_PALETTE_BLUE, 4),
             LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(s_btn_tb[i], LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_text_color(s_lbl_tb[i],
+        lv_obj_set_style_bg_opa(s_btn_test[i], LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_text_color(s_lbl_test[i],
             sel ? lv_color_white() : lv_color_black(),
             LV_PART_MAIN);
     }
@@ -182,13 +182,13 @@ static void show_data_panel_for_type(uint8_t type)
     lv_obj_add_flag(s_panel_none,      LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_panel_weighing,  LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_panel_preg,      LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_panel_tb,        LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_panel_test,      LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_panel_vax,       LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_lbl_vax_compact, LV_OBJ_FLAG_HIDDEN);
 
     bool is_input = (type == SESSION_TYPE_WEIGHING  ||
                      type == SESSION_TYPE_PREGNANCY  ||
-                     type == SESSION_TYPE_TB_TEST);
+                     type == SESSION_TYPE_TEST);
 
     if (is_input) {
         // EID area: y=60 h=70 — more vertical gap between EID value and badge
@@ -205,7 +205,7 @@ static void show_data_panel_for_type(uint8_t type)
         switch ((session_type_t)type) {
             case SESSION_TYPE_WEIGHING:  lv_obj_clear_flag(s_panel_weighing, LV_OBJ_FLAG_HIDDEN); break;
             case SESSION_TYPE_PREGNANCY: lv_obj_clear_flag(s_panel_preg,     LV_OBJ_FLAG_HIDDEN); break;
-            case SESSION_TYPE_TB_TEST:   lv_obj_clear_flag(s_panel_tb,       LV_OBJ_FLAG_HIDDEN); break;
+            case SESSION_TYPE_TEST:      lv_obj_clear_flag(s_panel_test,     LV_OBJ_FLAG_HIDDEN); break;
             default: break;
         }
     } else if (type == SESSION_TYPE_VACCINATION) {
@@ -277,10 +277,10 @@ static void update_controls_enabled(bool enabled)
         else         lv_obj_add_state  (s_btn_preg[i], LV_STATE_DISABLED);
     }
 
-    // TB buttons
+    // Test buttons
     for (int i = 0; i < 3; i++) {
-        if (enabled) lv_obj_clear_state(s_btn_tb[i], LV_STATE_DISABLED);
-        else         lv_obj_add_state  (s_btn_tb[i], LV_STATE_DISABLED);
+        if (enabled) lv_obj_clear_state(s_btn_test[i], LV_STATE_DISABLED);
+        else         lv_obj_add_state  (s_btn_test[i], LV_STATE_DISABLED);
     }
 
     // Animal note pencil button
@@ -386,10 +386,10 @@ static void on_preg_btn(lv_event_t *e)
     update_preg_buttons();
 }
 
-static void on_tb_btn(lv_event_t *e)
+static void on_test_btn(lv_event_t *e)
 {
-    s_tb = (tb_result_t)(intptr_t)lv_event_get_user_data(e);
-    update_tb_buttons();
+    s_test_result = (test_result_t)(intptr_t)lv_event_get_user_data(e);
+    update_test_buttons();
 }
 
 static void on_animal_note_btn(lv_event_t *e)
@@ -585,10 +585,12 @@ void screen_scan_create(void)
     lv_obj_align(s_lbl_status_tag, LV_ALIGN_BOTTOM_MID, 0, -6);
     set_status_ready();
 
-    // ── Data panel (y=118 h=152) ──────────────────────────────────────────────
-    // Height ends at y=270 to leave room for the note textarea below.
+    // ── Data panel (y=118 h=202) ──────────────────────────────────────────────
+    // Fills to screen bottom (y=320). Note input uses a full-screen overlay so
+    // it does not need reserved space here. Growing the panel removes the y=270
+    // clip that was blocking ext_click_area on child button bottoms.
     s_data_panel = lv_obj_create(s_scr);
-    lv_obj_set_size(s_data_panel, 480, 152);
+    lv_obj_set_size(s_data_panel, 480, 202);
     lv_obj_set_pos(s_data_panel, 0, 118);
     lv_obj_clear_flag(s_data_panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_border_width(s_data_panel, 0, LV_PART_MAIN);
@@ -743,32 +745,34 @@ void screen_scan_create(void)
     }
     update_preg_buttons();
 
-    // ── Panel: TB Test ─────────────────────────────────────────────────────────
-    // Title centered at top, 3 buttons below filling remaining height.
+    // ── Panel: Test ────────────────────────────────────────────────────────────
+    // Title (test name) at top, 3 buttons below filling remaining height.
     // Group: title(22) + gap(10) + buttons(90) = 122 → top margin = (168-122)/2 = 23
-    s_panel_tb = lv_obj_create(s_data_panel);
-    lv_obj_set_size(s_panel_tb, 464, 168);
-    lv_obj_set_pos(s_panel_tb, 0, 0);
-    lv_obj_set_style_bg_opa(s_panel_tb, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_panel_tb, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_panel_tb, 0, LV_PART_MAIN);
-    lv_obj_clear_flag(s_panel_tb, LV_OBJ_FLAG_SCROLLABLE);
+    s_panel_test = lv_obj_create(s_data_panel);
+    lv_obj_set_size(s_panel_test, 464, 168);
+    lv_obj_set_pos(s_panel_test, 0, 0);
+    lv_obj_set_style_bg_opa(s_panel_test, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_panel_test, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_panel_test, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(s_panel_test, LV_OBJ_FLAG_SCROLLABLE);
 
-    s_lbl_tb_title = lv_label_create(s_panel_tb);
-    lv_label_set_text(s_lbl_tb_title, i18n_t(STR_TB_RESULT));
-    lv_obj_set_style_text_font(s_lbl_tb_title, &pilocows_font_18, LV_PART_MAIN);
-    lv_obj_set_pos(s_lbl_tb_title, 0, 23);
+    s_lbl_test_title = lv_label_create(s_panel_test);
+    lv_label_set_text(s_lbl_test_title, i18n_t(STR_TEST_RESULT));
+    lv_obj_set_style_text_font(s_lbl_test_title, &pilocows_font_18, LV_PART_MAIN);
+    lv_label_set_long_mode(s_lbl_test_title, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(s_lbl_test_title, 464);
+    lv_obj_set_pos(s_lbl_test_title, 0, 23);
 
-    const char *tb_labels[] = {
-        i18n_t(STR_TB_INCONCLUSIVE), i18n_t(STR_TB_POSITIVE), i18n_t(STR_TB_NEGATIVE)
+    const char *test_labels[] = {
+        i18n_t(STR_TEST_INCONCLUSIVE), i18n_t(STR_TEST_POSITIVE), i18n_t(STR_TEST_NEGATIVE)
     };
     for (int i = 0; i < 3; i++) {
-        s_btn_tb[i] = make_radio_btn(s_panel_tb,
+        s_btn_test[i] = make_radio_btn(s_panel_test,
             4 + i * 154, 55, 146, 90,
-            tb_labels[i], on_tb_btn, (void *)(intptr_t)i,
-            &s_lbl_tb[i]);
+            test_labels[i], on_test_btn, (void *)(intptr_t)i,
+            &s_lbl_test[i]);
     }
-    update_tb_buttons();
+    update_test_buttons();
 
     // ── Panel: Vaccination ────────────────────────────────────────────────────
     s_panel_vax = lv_obj_create(s_data_panel);
@@ -794,7 +798,7 @@ void screen_scan_create(void)
     lv_obj_add_flag(s_panel_none,     LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_panel_weighing, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_panel_preg,     LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_panel_tb,       LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_panel_test,     LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_panel_vax,      LV_OBJ_FLAG_HIDDEN);
 
     // ── Compact vaccine label (Vaccination sessions, no-input layout) ─────────
@@ -930,6 +934,14 @@ void screen_scan_set_session(const session_meta_t *meta)
         // show_data_panel_for_type() handles data panel + eid_row visibility/position
         show_data_panel_for_type(meta->type);
         populate_vax_panel();
+        // For Test sessions, set the panel title to the configured test name
+        if (meta->type == SESSION_TYPE_TEST) {
+            char tname[TEST_NAME_MAX] = "";
+            if (meta->test_id != 0) {
+                test_get_name(meta->test_id, tname, sizeof(tname));
+            }
+            lv_label_set_text(s_lbl_test_title, tname[0] ? tname : i18n_t(STR_TEST_RESULT));
+        }
     } else {
         s_has_session = false;
         close_animal_note_modal();
@@ -995,9 +1007,9 @@ void screen_scan_show_tag(const char *eid, bool is_duplicate)
             } else if (type == SESSION_TYPE_PREGNANCY) {
                 s_preg = (pregnancy_result_t)rec.data[0];
                 update_preg_buttons();
-            } else if (type == SESSION_TYPE_TB_TEST) {
-                s_tb = (tb_result_t)rec.data[0];
-                update_tb_buttons();
+            } else if (type == SESSION_TYPE_TEST) {
+                s_test_result = (test_result_t)rec.data[0];
+                update_test_buttons();
             }
         }
     } else {
@@ -1008,9 +1020,9 @@ void screen_scan_show_tag(const char *eid, bool is_duplicate)
             if (type == SESSION_TYPE_PREGNANCY) {
                 s_preg = PREGNANCY_UNKNOWN;
                 update_preg_buttons();
-            } else if (type == SESSION_TYPE_TB_TEST) {
-                s_tb = TB_INCONCLUSIVE;
-                update_tb_buttons();
+            } else if (type == SESSION_TYPE_TEST) {
+                s_test_result = TEST_INCONCLUSIVE;
+                update_test_buttons();
             }
             // Weighing: s_weight_kg intentionally kept from last scan
         }
@@ -1038,8 +1050,8 @@ bool screen_scan_get_record(tag_record_t *out)
             out->data[0] = (uint8_t)s_preg;
             break;
         }
-        case SESSION_TYPE_TB_TEST: {
-            out->data[0] = (uint8_t)s_tb;
+        case SESSION_TYPE_TEST: {
+            out->data[0] = (uint8_t)s_test_result;
             break;
         }
         case SESSION_TYPE_VACCINATION: {
@@ -1069,10 +1081,10 @@ void screen_scan_clear_pending(void)
     lv_label_set_text(s_lbl_hint, i18n_t(STR_SCAN_READY));
     s_animal_note[0] = '\0';
     // Reset data fields
-    s_preg = PREGNANCY_UNKNOWN;
-    s_tb   = TB_INCONCLUSIVE;
+    s_preg        = PREGNANCY_UNKNOWN;
+    s_test_result = TEST_INCONCLUSIVE;
     update_preg_buttons();
-    update_tb_buttons();
+    update_test_buttons();
     // Do NOT reset weight — persists within session
     // Lock data-entry controls until next scan
     update_controls_enabled(false);
@@ -1114,7 +1126,8 @@ void screen_scan_refresh_language(void)
     lv_label_set_text(s_lbl_btn_go_sessions, i18n_t(STR_SESSION_TITLE));
     lv_textarea_set_placeholder_text(s_ta_animal_note, i18n_t(STR_NOTE_PLACEHOLDER));
     lv_label_set_text(s_lbl_weight_title,    i18n_t(STR_WEIGHT_KG));
-    lv_label_set_text(s_lbl_tb_title,        i18n_t(STR_TB_RESULT));
+    // Test title is set dynamically in screen_scan_set_session; skip here to
+    // avoid overwriting the configured test name with the generic fallback.
     lv_label_set_text(s_lbl_vax_title,       i18n_t(STR_SESSION_SELECT_VAX));
 
     // Display order matches s_preg_btn_val[]: Unknown, No, Rejected, Small, Medium, Big
@@ -1125,9 +1138,9 @@ void screen_scan_refresh_language(void)
     lv_label_set_text(s_lbl_preg[4], i18n_t(STR_PREG_MEDIUM));
     lv_label_set_text(s_lbl_preg[5], i18n_t(STR_PREG_BIG));
 
-    lv_label_set_text(s_lbl_tb[0], i18n_t(STR_TB_INCONCLUSIVE));
-    lv_label_set_text(s_lbl_tb[1], i18n_t(STR_TB_POSITIVE));
-    lv_label_set_text(s_lbl_tb[2], i18n_t(STR_TB_NEGATIVE));
+    lv_label_set_text(s_lbl_test[0], i18n_t(STR_TEST_INCONCLUSIVE));
+    lv_label_set_text(s_lbl_test[1], i18n_t(STR_TEST_POSITIVE));
+    lv_label_set_text(s_lbl_test[2], i18n_t(STR_TEST_NEGATIVE));
 
     update_session_bar();  // refreshes session name + count
 

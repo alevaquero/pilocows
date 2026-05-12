@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     handheld_session_id INTEGER NOT NULL,
     device_id           TEXT    NOT NULL,   -- BT MAC address of the source handheld
     name                TEXT    NOT NULL DEFAULT '',
-    type                INTEGER NOT NULL DEFAULT 0,  -- session_type_t: 0=general 1=weighing 2=vaccination 3=pregnancy 4=tb_test 5=removal
+    type                INTEGER NOT NULL DEFAULT 0,  -- session_type_t: 0=general 1=weighing 2=vaccination 3=pregnancy 4=test 5=removal
     created_at          TEXT    NOT NULL,             -- ISO-8601, from handheld RTC
     tag_count           INTEGER NOT NULL DEFAULT 0,
     handheld_note       TEXT    NOT NULL DEFAULT '',  -- free-text note entered on the handheld

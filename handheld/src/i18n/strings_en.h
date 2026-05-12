@@ -25,7 +25,7 @@
 #define STR_EVENT_WEIGHING      "Weighing"
 #define STR_EVENT_VACCINATION   "Vaccination"
 #define STR_EVENT_PREGNANCY     "Pregnancy Check"
-#define STR_EVENT_TB_TEST       "TB Test"
+#define STR_EVENT_TEST          "Test"
 #define STR_EVENT_REMOVAL       "Removal"
 
 // History screen
@@ -112,11 +112,11 @@
 #define STR_PREG_BIG                "Big"
 #define STR_PREG_REJECTED           "Rejected"
 
-// TB Test
-#define STR_TB_RESULT               "TB Test"
-#define STR_TB_POSITIVE             "Positive"
-#define STR_TB_NEGATIVE             "Negative"
-#define STR_TB_INCONCLUSIVE         "Inconclusive"
+// Test (generic configurable test)
+#define STR_TEST_RESULT             "Test"
+#define STR_TEST_POSITIVE           "Positive"
+#define STR_TEST_NEGATIVE           "Negative"
+#define STR_TEST_INCONCLUSIVE       "Inconclusive"
 
 // Notes
 #define STR_NOTE                    "Note"
@@ -133,6 +133,16 @@
 #define STR_VACCINE_DELETE          "Delete"
 #define STR_VACCINE_NONE            "No vaccines configured"
 #define STR_VACCINE_CONFIRM_DELETE  "Delete this vaccine?"
+
+// Tests settings
+#define STR_SETTINGS_TESTS          "Tests"
+#define STR_TESTS_TITLE             "Tests"
+#define STR_TEST_ADD                "Add Test"
+#define STR_TEST_NAME               "Test Name"
+#define STR_TEST_DELETE             "Delete"
+#define STR_TEST_NONE               "No tests configured"
+#define STR_TEST_CONFIRM_DELETE     "Delete this test?"
+#define STR_SESSION_SELECT_TEST     "Test"
 
 // Common
 #define STR_BTN_OK              "OK"

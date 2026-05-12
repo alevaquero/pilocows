@@ -24,7 +24,21 @@ static lv_disp_t               *s_lvgl_disp  = NULL;
 // TOUCH_X_OFFSET: subtract from y[i] → shifts registered point leftward.
 // (Adding to y[i] was empirically observed to move the point RIGHT, so we subtract.)
 static constexpr uint16_t TOUCH_Y_OFFSET = 0;
-static constexpr uint16_t TOUCH_X_OFFSET = 10;
+static constexpr uint16_t TOUCH_X_OFFSET = 0;
+
+// ---------------------------------------------------------------------------
+// Touch debug overlay — shows raw (green) vs adjusted (red) touch points.
+// Define DEBUG_TOUCH to enable; comment out to remove entirely.
+// ---------------------------------------------------------------------------
+#define DEBUG_TOUCH
+
+#ifdef DEBUG_TOUCH
+static lv_obj_t        *s_dbg_dot_raw = NULL;  // green — raw IC portrait coords
+// static lv_obj_t        *s_dbg_dot_adj = NULL;  // red   — post-offset coords (what LVGL sees)
+static volatile uint16_t s_dbg_x_raw  = 0;
+static volatile uint16_t s_dbg_y_raw  = 0;
+static volatile bool     s_dbg_touched = false;
+#endif
 
 
 // ---------------------------------------------------------------------------
@@ -221,6 +235,17 @@ static esp_err_t touch_init(esp_lcd_panel_io_handle_t lcd_io)
             // TOUCH_X_OFFSET: add to portrait-y → shifts landscape X leftward
             //   (landscape_x = x_max - portrait_y after mirror_x, so adding here subtracts).
             (void)max_num;
+#ifdef DEBUG_TOUCH
+            // Capture raw IC coordinates BEFORE offsets so the debug overlay can
+            // show both the raw touch point (green) and the adjusted one (red).
+            if (*point_num > 0) {
+                s_dbg_x_raw  = x[0];
+                s_dbg_y_raw  = y[0];
+                s_dbg_touched = true;
+            } else {
+                s_dbg_touched = false;
+            }
+#endif
             for (uint8_t i = 0; i < *point_num; ++i) {
                 x[i] = (x[i] >= TOUCH_Y_OFFSET) ? (x[i] - TOUCH_Y_OFFSET) : 0;
                 y[i] = (y[i] >= TOUCH_X_OFFSET) ? (y[i] - TOUCH_X_OFFSET) : 0;
@@ -276,6 +301,62 @@ static esp_err_t lvgl_init(esp_lcd_panel_io_handle_t lcd_io)
         ESP_LOGE(TAG, "Failed to add LVGL touch");
         return ESP_FAIL;
     }
+
+#ifdef DEBUG_TOUCH
+    // Create two small circular dots on the top layer (never interactive).
+    // Green = raw IC portrait coords converted to landscape.
+    // Red   = adjusted coords (post-offset) — what LVGL actually receives.
+    lv_obj_t *layer = lv_layer_top();
+
+    auto make_dot = [&](lv_color_t color) -> lv_obj_t * {
+        lv_obj_t *dot = lv_obj_create(layer);
+        lv_obj_set_size(dot, 14, 14);
+        lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(dot, color, 0);
+        lv_obj_set_style_bg_opa(dot, LV_OPA_80, 0);
+        lv_obj_set_style_border_width(dot, 0, 0);
+        lv_obj_set_style_pad_all(dot, 0, 0);
+        lv_obj_clear_flag(dot, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(dot, LV_OBJ_FLAG_HIDDEN);
+        return dot;
+    };
+
+    s_dbg_dot_raw = make_dot(lv_color_hex(0x00CC00));  // green
+    // s_dbg_dot_adj = make_dot(lv_color_hex(0xCC0000));  // red
+
+    // Poll touch state every 50 ms and reposition dots.
+    lv_timer_create([](lv_timer_t *) {
+        if (!s_dbg_touched) {
+            lv_obj_add_flag(s_dbg_dot_raw, LV_OBJ_FLAG_HIDDEN);
+            // lv_obj_add_flag(s_dbg_dot_adj, LV_OBJ_FLAG_HIDDEN);
+            return;
+        }
+
+        // Snapshot volatile state once.
+        uint16_t xr = s_dbg_x_raw;
+        uint16_t yr = s_dbg_y_raw;
+
+        // Transform raw IC portrait coords → landscape display coords.
+        // IC portrait: x_raw ∈ [0, LCD_V_RES=320], y_raw ∈ [0, LCD_H_RES=480].
+        // After mirror_x(x_max=320): lx_pre = 320 - x_raw.
+        // After swap_xy:             landscape_x = y_raw, landscape_y = 320 - x_raw.
+        int16_t green_x = (int16_t)yr;
+        int16_t green_y = (int16_t)(LCD_V_RES - (int16_t)xr);
+
+        // Adjusted coords apply offsets before mirror/swap.
+        uint16_t xa = (xr >= TOUCH_Y_OFFSET) ? (xr - TOUCH_Y_OFFSET) : 0;
+        uint16_t ya = (yr >= TOUCH_X_OFFSET) ? (yr - TOUCH_X_OFFSET) : 0;
+        int16_t red_x = (int16_t)ya;
+        int16_t red_y = (int16_t)(LCD_V_RES - (int16_t)xa);
+
+        lv_obj_set_pos(s_dbg_dot_raw, green_x - 7, green_y - 7);
+        // lv_obj_set_pos(s_dbg_dot_adj, red_x - 7,   red_y - 7);
+        lv_obj_clear_flag(s_dbg_dot_raw, LV_OBJ_FLAG_HIDDEN);
+        // lv_obj_clear_flag(s_dbg_dot_adj, LV_OBJ_FLAG_HIDDEN);
+    }, 50, NULL);
+
+    ESP_LOGI(TAG, "DEBUG_TOUCH enabled — green=raw IC, red=post-offset");
+#endif
 
     return ESP_OK;
 }

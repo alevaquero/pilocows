@@ -25,7 +25,8 @@ export interface SessionRecord {
   session_id: number
   weight_kg?: number
   pregnancy_result?: string
-  tb_result?: string
+  test_result?: string
+  test_name?: string
   vaccines?: string
   notes?: string
 }
@@ -41,7 +42,8 @@ export interface IncomingScan {
   session_id?: number
   weight_kg?: number
   pregnancy_result?: string
-  tb_result?: string
+  test_result?: string
+  test_name?: string
   vaccines?: string
   notes?: string
 }

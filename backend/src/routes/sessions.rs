@@ -68,12 +68,18 @@ fn build_event_data(rec: &IncomingSessionRecord) -> String {
             }
         }
         4 => {
-            // TB Test
-            if let Some(t) = &rec.tb_result {
-                let escaped = t.replace('"', "\\\"");
-                format!("{{\"tb_result\":\"{}\"}}", escaped)
-            } else {
-                "{}".to_string()
+            // Test
+            match (&rec.test_result, &rec.test_name) {
+                (Some(result), Some(name)) => {
+                    let r = result.replace('"', "\\\"");
+                    let n = name.replace('"', "\\\"");
+                    format!("{{\"test_result\":\"{}\",\"test_name\":\"{}\"}}", r, n)
+                }
+                (Some(result), None) => {
+                    let r = result.replace('"', "\\\"");
+                    format!("{{\"test_result\":\"{}\"}}", r)
+                }
+                _ => "{}".to_string(),
             }
         }
         _ => "{}".to_string(),

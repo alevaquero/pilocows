@@ -5,30 +5,30 @@ import { animalsApi, type AnimalProfile, BREEDS, CATEGORIES } from '../api/anima
 import {
   healthApi,
   PREGNANCY_RESULTS, TB_RESULTS, REMOVAL_REASONS, COMMON_VACCINES,
-  type Vaccination, type Pregnancy, type TbTest, type Weight, type Removal,
+  type Vaccination, type Pregnancy, type Test, type Weight, type Removal,
 } from '../api/health'
 import Modal, { Field, inputCls } from '../components/Modal'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'vaccinations' | 'pregnancies' | 'tb_tests' | 'weights'
+type Tab = 'vaccinations' | 'pregnancies' | 'tests' | 'weights'
 
 type ModalState =
   | null
   | { kind: 'edit_animal' }
   | { kind: 'vaccination'; initial?: Vaccination }
   | { kind: 'pregnancy'; initial?: Pregnancy }
-  | { kind: 'tb_test'; initial?: TbTest }
+  | { kind: 'test'; initial?: Test }
   | { kind: 'weight'; initial?: Weight }
   | { kind: 'remove' }
   | { kind: 'edit_removal' }
   | { kind: 'restore' }
   | { kind: 'delete'; recordType: Tab; id: number }
 
-const TAB_TO_KIND: Record<Tab, 'vaccination' | 'pregnancy' | 'tb_test' | 'weight'> = {
+const TAB_TO_KIND: Record<Tab, 'vaccination' | 'pregnancy' | 'test' | 'weight'> = {
   vaccinations: 'vaccination',
   pregnancies: 'pregnancy',
-  tb_tests: 'tb_test',
+  tests: 'test',
   weights: 'weight',
 }
 
@@ -231,13 +231,14 @@ function PregnancyModal({ animalId, initial, onClose, onSaved }: {
   )
 }
 
-// ── TB Test modal (add + edit) ────────────────────────────────────────────────
+// ── Test modal (add + edit) ───────────────────────────────────────────────────
 
-function TbTestModal({ animalId, initial, onClose, onSaved }: {
-  animalId: number; initial?: TbTest; onClose: () => void
-  onSaved: (tb: TbTest, isEdit: boolean) => void
+function TestModal({ animalId, initial, onClose, onSaved }: {
+  animalId: number; initial?: Test; onClose: () => void
+  onSaved: (tb: Test, isEdit: boolean) => void
 }) {
   const { t } = useTranslation()
+  const [testName, setTestName] = useState(initial?.test_name ?? '')
   const [result, setResult] = useState(initial?.result ?? TB_RESULTS[0])
   const [testedAt, setTestedAt] = useState(initial?.tested_at ?? today())
   const [notes, setNotes] = useState(initial?.notes ?? '')
@@ -247,10 +248,10 @@ function TbTestModal({ animalId, initial, onClose, onSaved }: {
   const submit = async () => {
     setSaving(true)
     try {
-      const payload = { result, tested_at: testedAt, notes }
+      const payload = { test_name: testName, result, tested_at: testedAt, notes }
       const res = initial
-        ? await healthApi.patchTbTest(animalId, initial.id, payload)
-        : await healthApi.createTbTest(animalId, payload)
+        ? await healthApi.patchTest(animalId, initial.id, payload)
+        : await healthApi.createTest(animalId, payload)
       onSaved(res, !!initial)
       onClose()
     } catch (e) { setError(String(e)) }
@@ -258,20 +259,21 @@ function TbTestModal({ animalId, initial, onClose, onSaved }: {
   }
 
   return (
-    <Modal title={t('detail.add')} onClose={onClose} footer={
+    <Modal title={initial ? t('detail.edit') : t('detail.add')} onClose={onClose} footer={
       <div className="flex gap-2 justify-end w-full">
         <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50">{t('common.cancel')}</button>
         <button onClick={submit} disabled={saving} className="px-4 py-2 text-sm rounded-lg bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50">{saving ? t('common.loading') : t('common.save')}</button>
       </div>
     }>
       {error && <p className="mb-3 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-      <Field label={t('tb_test.result')}>
+      <Field label={t('detail.test_name')}><input type="text" className={inputCls} value={testName} onChange={e => setTestName(e.target.value)} placeholder={t('detail.test_name_placeholder')} /></Field>
+      <Field label={t('test.result')}>
         <select className={inputCls} value={result} onChange={e => setResult(e.target.value)}>
-          {TB_RESULTS.map(r => <option key={r} value={r}>{t(`tb_test.${r}`)}</option>)}
+          {TB_RESULTS.map(r => <option key={r} value={r}>{t(`test.${r}`)}</option>)}
         </select>
       </Field>
-      <Field label={t('tb_test.tested_at')}><input type="date" className={inputCls} value={testedAt} onChange={e => setTestedAt(e.target.value)} /></Field>
-      <Field label={t('tb_test.notes')}><textarea className={inputCls} rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
+      <Field label={t('test.tested_at')}><input type="date" className={inputCls} value={testedAt} onChange={e => setTestedAt(e.target.value)} /></Field>
+      <Field label={t('test.notes')}><textarea className={inputCls} rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
     </Modal>
   )
 }
@@ -470,7 +472,7 @@ export default function AnimalDetailPage() {
   if (loading) return <div className="p-8 text-sm text-slate-500">{t('common.loading')}</div>
   if (!profile) return <div className="p-8 text-sm text-slate-500">{t('common.error')}</div>
 
-  const { vaccinations, pregnancies, tb_tests, weights, removal } = profile
+  const { vaccinations, pregnancies, tests, weights, removal } = profile
 
   // ── Profile state updaters ─────────────────────────────────────────────────
 
@@ -488,12 +490,12 @@ export default function AnimalDetailPage() {
   const deletePreg = (id: number) =>
     setProfile(p => p ? { ...p, pregnancies: p.pregnancies.filter(x => x.id !== id) } : p)
 
-  const replaceTb = (tb: TbTest) =>
-    setProfile(p => p ? { ...p, tb_tests: p.tb_tests.map(x => x.id === tb.id ? tb : x) } : p)
-  const addTb = (tb: TbTest) =>
-    setProfile(p => p ? { ...p, tb_tests: [tb, ...p.tb_tests] } : p)
+  const replaceTb = (tb: Test) =>
+    setProfile(p => p ? { ...p, tests: p.tests.map(x => x.id === tb.id ? tb : x) } : p)
+  const addTb = (tb: Test) =>
+    setProfile(p => p ? { ...p, tests: [tb, ...p.tests] } : p)
   const deleteTb = (id: number) =>
-    setProfile(p => p ? { ...p, tb_tests: p.tb_tests.filter(x => x.id !== id) } : p)
+    setProfile(p => p ? { ...p, tests: p.tests.filter(x => x.id !== id) } : p)
 
   const replaceWeight = (w: Weight) =>
     setProfile(p => p ? { ...p, weights: p.weights.map(x => x.id === w.id ? w : x) } : p)
@@ -508,7 +510,7 @@ export default function AnimalDetailPage() {
     switch (recordType) {
       case 'vaccinations': await healthApi.deleteVaccination(profile.id, recordId); deleteVax(recordId); break
       case 'pregnancies':  await healthApi.deletePregnancy(profile.id, recordId);  deletePreg(recordId); break
-      case 'tb_tests':     await healthApi.deleteTbTest(profile.id, recordId);     deleteTb(recordId);   break
+      case 'tests':        await healthApi.deleteTest(profile.id, recordId);       deleteTb(recordId);   break
       case 'weights':      await healthApi.deleteWeight(profile.id, recordId);     deleteWeight(recordId); break
     }
   }
@@ -568,7 +570,7 @@ export default function AnimalDetailPage() {
       <div className="flex border-b border-slate-200 mb-6 gap-1">
         <TabButton label={`${t('detail.vaccinations')} (${vaccinations.length})`} active={tab === 'vaccinations'} onClick={() => setTab('vaccinations')} />
         <TabButton label={`${t('detail.pregnancies')} (${pregnancies.length})`} active={tab === 'pregnancies'} onClick={() => setTab('pregnancies')} />
-        <TabButton label={`${t('detail.tb_tests')} (${tb_tests.length})`} active={tab === 'tb_tests'} onClick={() => setTab('tb_tests')} />
+        <TabButton label={`${t('detail.tests')} (${tests.length})`} active={tab === 'tests'} onClick={() => setTab('tests')} />
         <TabButton label={`${t('detail.weights')} (${weights.length})`} active={tab === 'weights'} onClick={() => setTab('weights')} />
       </div>
 
@@ -626,21 +628,22 @@ export default function AnimalDetailPage() {
           )
         )}
 
-        {/* TB Tests */}
-        {tab === 'tb_tests' && (
-          tb_tests.length === 0 ? <Empty t={t} /> : (
+        {/* Tests */}
+        {tab === 'tests' && (
+          tests.length === 0 ? <Empty t={t} /> : (
             <table className="w-full text-sm">
               <thead><tr className="border-b border-slate-100 bg-slate-50">
-                <Th>{t('tb_test.result')}</Th><Th>{t('tb_test.tested_at')}</Th>
-                <Th>{t('tb_test.notes')}</Th><th />
+                <Th>{t('detail.test_name')}</Th><Th>{t('test.result')}</Th>
+                <Th>{t('test.tested_at')}</Th><Th>{t('test.notes')}</Th><th />
               </tr></thead>
-              <tbody>{tb_tests.map(tb => (
+              <tbody>{tests.map(tb => (
                 <tr key={tb.id} className="border-b border-slate-50 last:border-0">
-                  <td className="px-4 py-3 font-medium text-slate-800 select-text cursor-text">{t(`tb_test.${tb.result}`)}</td>
+                  <td className="px-4 py-3 font-medium text-slate-800 select-text cursor-text">{tb.test_name || '—'}</td>
+                  <Td>{t(`test.${tb.result}`)}</Td>
                   <Td>{tb.tested_at}</Td><Td>{tb.notes || '—'}</Td>
                   <RowActions
-                    onEdit={() => setModal({ kind: 'tb_test', initial: tb })}
-                    onDelete={() => setModal({ kind: 'delete', recordType: 'tb_tests', id: tb.id })}
+                    onEdit={() => setModal({ kind: 'test', initial: tb })}
+                    onDelete={() => setModal({ kind: 'delete', recordType: 'tests', id: tb.id })}
                   />
                 </tr>
               ))}</tbody>
@@ -683,8 +686,8 @@ export default function AnimalDetailPage() {
         <PregnancyModal animalId={profile.id} initial={modal.initial} onClose={() => setModal(null)}
           onSaved={(p, isEdit) => { isEdit ? replacePreg(p) : addPreg(p); setModal(null) }} />
       )}
-      {modal?.kind === 'tb_test' && (
-        <TbTestModal animalId={profile.id} initial={modal.initial} onClose={() => setModal(null)}
+      {modal?.kind === 'test' && (
+        <TestModal animalId={profile.id} initial={modal.initial} onClose={() => setModal(null)}
           onSaved={(tb, isEdit) => { isEdit ? replaceTb(tb) : addTb(tb); setModal(null) }} />
       )}
       {modal?.kind === 'weight' && (

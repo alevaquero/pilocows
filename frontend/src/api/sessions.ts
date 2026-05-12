@@ -9,7 +9,7 @@ export interface SessionSummary {
   handheld_session_id: number
   device_id: string
   name: string
-  session_type: number   // 0=general 1=weighing 2=vaccination 3=pregnancy 4=tb_test
+  session_type: number   // 0=general 1=weighing 2=vaccination 3=pregnancy 4=test
   created_at: string
   tag_count: number
   handheld_note: string
@@ -65,7 +65,8 @@ export interface IncomingSessionRecord {
   type: number
   weight_kg?: number
   pregnancy?: string
-  tb_result?: string
+  test_result?: string
+  test_name?: string
   vaccines?: string
   note?: string
 }
@@ -103,7 +104,7 @@ const SESSION_TYPE_LABELS: Record<number, string> = {
   1: 'weighing',
   2: 'vaccination',
   3: 'pregnancy',
-  4: 'tb_test',
+  4: 'test',
 }
 
 export function sessionTypeKey(t: number): string {
@@ -126,8 +127,10 @@ export function formatEventData(
         return raw && t ? t(`pregnancy.${raw}`) : raw
       }
       case 4: {
-        const raw: string = d.tb_result ?? ''
-        return raw && t ? t(`tb_test.${raw}`) : raw
+        const raw: string = d.test_result ?? ''
+        const name: string = d.test_name ?? ''
+        const label = raw && t ? t(`test.${raw}`) : raw
+        return name ? `${name}: ${label}` : label
       }
       default: return ''
     }

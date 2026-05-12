@@ -5,6 +5,7 @@
 #include "screen_session_new.h"
 #include "screen_session_list.h"
 #include "screen_vaccine_settings.h"
+#include "screen_test_settings.h"
 #include "screen_ble_sync.h"
 #include "ui_manager.h"
 #include "i18n/i18n.h"
@@ -31,6 +32,8 @@ static lv_obj_t *s_lbl_wifi         = NULL;
 static lv_obj_t *s_lbl_wifi_btn     = NULL;  // "Configure" button label inside the row
 static lv_obj_t *s_lbl_vaccines     = NULL;
 static lv_obj_t *s_lbl_vaccines_btn = NULL;  // "Configure" button label inside the row
+static lv_obj_t *s_lbl_tests        = NULL;
+static lv_obj_t *s_lbl_tests_btn    = NULL;  // "Configure" button label inside the row
 static lv_obj_t *s_lbl_sync         = NULL;
 static lv_obj_t *s_lbl_sync_btn     = NULL;  // "Sync to PC" button label inside the row
 
@@ -58,6 +61,8 @@ static void refresh_language(void)
     lv_label_set_text(s_lbl_wifi_btn,     i18n_t(STR_WIFI_CONFIGURE));
     lv_label_set_text(s_lbl_vaccines,     i18n_t(STR_SETTINGS_VACCINES));
     lv_label_set_text(s_lbl_vaccines_btn, i18n_t(STR_WIFI_CONFIGURE));
+    lv_label_set_text(s_lbl_tests,        i18n_t(STR_SETTINGS_TESTS));
+    lv_label_set_text(s_lbl_tests_btn,    i18n_t(STR_WIFI_CONFIGURE));
     lv_label_set_text(s_lbl_sync,         i18n_t(STR_SETTINGS_SYNC));
     lv_label_set_text(s_lbl_sync_btn,     i18n_t(STR_SETTINGS_SYNC));
 }
@@ -290,9 +295,10 @@ void screen_settings_create(void)
     lv_obj_clear_flag(hdr, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *btn_back = lv_btn_create(hdr);
-    lv_obj_set_size(btn_back, 70, 32);
-    lv_obj_align(btn_back, LV_ALIGN_LEFT_MID, 6, 0);
-    lv_obj_set_ext_click_area(btn_back, 10);
+    lv_obj_set_size(btn_back, 100, 34);   // 34px leaves 5px gap from header top and bottom border
+    lv_obj_align(btn_back, LV_ALIGN_LEFT_MID, 0, 0);
+    // ext_click_area=20 fills the remaining 5px gaps to header edges and extends left into the bezel.
+    lv_obj_set_ext_click_area(btn_back, 20);
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
     s_lbl_back = lv_label_create(btn_back);
     lv_label_set_text(s_lbl_back, i18n_t(STR_BTN_BACK));
@@ -324,6 +330,15 @@ void screen_settings_create(void)
     const int btn_w  = 148;
     const int btn_h  = 34;
 
+    // ext_click_area values expand each control's hit zone to fill the full row height.
+    // Derived from control position within the row:
+    //   switch (h≈26, offset 13): 13px fills gap to row top; symmetric → 13
+    //   button (h=34, offset  8):  8px fills gap to row top; symmetric → 8
+    //   slider (h=20, offset 16): 15px fills gap to row top; symmetric → 15
+    const int sw_ext  = 13;
+    const int btn_ext =  8;
+    const int sl_ext  = 15;
+
     // Helper lambda: add a horizontal separator
     auto add_sep = [&]() {
         lv_obj_t *sep = lv_obj_create(panel);
@@ -347,6 +362,7 @@ void screen_settings_create(void)
 
         lv_obj_t *sw = lv_switch_create(panel);
         lv_obj_set_pos(sw, 400, row_y + 13);
+        lv_obj_set_ext_click_area(sw, sw_ext);
         if (i18n_get_language() == LANG_EN) lv_obj_add_state(sw, LV_STATE_CHECKED);
         lv_obj_add_event_cb(sw, on_language, LV_EVENT_VALUE_CHANGED, NULL);
         row_y += row_h;
@@ -362,6 +378,7 @@ void screen_settings_create(void)
 
         lv_obj_t *sw = lv_switch_create(panel);
         lv_obj_set_pos(sw, 400, row_y + 13);
+        lv_obj_set_ext_click_area(sw, sw_ext);
         lv_obj_add_state(sw, LV_STATE_CHECKED);
         lv_obj_add_event_cb(sw, on_buzzer, LV_EVENT_VALUE_CHANGED, NULL);
         row_y += row_h;
@@ -377,6 +394,7 @@ void screen_settings_create(void)
 
         lv_obj_t *sw = lv_switch_create(panel);
         lv_obj_set_pos(sw, 400, row_y + 13);
+        lv_obj_set_ext_click_area(sw, sw_ext);
         lv_obj_add_state(sw, LV_STATE_CHECKED);
         lv_obj_add_event_cb(sw, on_vibrator, LV_EVENT_VALUE_CHANGED, NULL);
         row_y += row_h;
@@ -393,6 +411,7 @@ void screen_settings_create(void)
         lv_obj_t *slider = lv_slider_create(panel);
         lv_obj_set_size(slider, btn_w, 20);
         lv_obj_set_pos(slider, btn_x, row_y + 16);
+        lv_obj_set_ext_click_area(slider, sl_ext);
         lv_slider_set_range(slider, 20, 100);
         lv_slider_set_value(slider, 80, LV_ANIM_OFF);
         lv_obj_add_event_cb(slider, on_brightness, LV_EVENT_VALUE_CHANGED, NULL);
@@ -410,6 +429,7 @@ void screen_settings_create(void)
         lv_obj_t *btn_edit = lv_btn_create(panel);
         lv_obj_set_size(btn_edit, btn_w, btn_h);
         lv_obj_set_pos(btn_edit, btn_x, row_y + 8);
+        lv_obj_set_ext_click_area(btn_edit, btn_ext);
         lv_obj_add_event_cb(btn_edit, on_datetime_edit, LV_EVENT_CLICKED, NULL);
         s_lbl_datetime_btn = lv_label_create(btn_edit);
         lv_label_set_text(s_lbl_datetime_btn, i18n_t(STR_SETTINGS_SET_TIME));
@@ -428,6 +448,7 @@ void screen_settings_create(void)
         lv_obj_t *btn_wifi = lv_btn_create(panel);
         lv_obj_set_size(btn_wifi, btn_w, btn_h);
         lv_obj_set_pos(btn_wifi, btn_x, row_y + 8);
+        lv_obj_set_ext_click_area(btn_wifi, btn_ext);
         lv_obj_add_event_cb(btn_wifi, [](lv_event_t *) {
             ui_manager_show(SCREEN_WIFI);
         }, LV_EVENT_CLICKED, NULL);
@@ -448,12 +469,34 @@ void screen_settings_create(void)
         lv_obj_t *btn_vax = lv_btn_create(panel);
         lv_obj_set_size(btn_vax, btn_w, btn_h);
         lv_obj_set_pos(btn_vax, btn_x, row_y + 8);
+        lv_obj_set_ext_click_area(btn_vax, btn_ext);
         lv_obj_add_event_cb(btn_vax, [](lv_event_t *) {
             ui_manager_show(SCREEN_VACCINE_SETTINGS);
         }, LV_EVENT_CLICKED, NULL);
         s_lbl_vaccines_btn = lv_label_create(btn_vax);
         lv_label_set_text(s_lbl_vaccines_btn, i18n_t(STR_WIFI_CONFIGURE));
         lv_obj_center(s_lbl_vaccines_btn);
+        row_y += row_h;
+    }
+
+    add_sep();
+
+    // ── Tests ─────────────────────────────────────────────────────────────────
+    {
+        s_lbl_tests = lv_label_create(panel);
+        lv_label_set_text(s_lbl_tests, i18n_t(STR_SETTINGS_TESTS));
+        lv_obj_set_pos(s_lbl_tests, 20, row_y + 15);
+
+        lv_obj_t *btn_tests = lv_btn_create(panel);
+        lv_obj_set_size(btn_tests, btn_w, btn_h);
+        lv_obj_set_pos(btn_tests, btn_x, row_y + 8);
+        lv_obj_set_ext_click_area(btn_tests, btn_ext);
+        lv_obj_add_event_cb(btn_tests, [](lv_event_t *) {
+            ui_manager_show(SCREEN_TEST_SETTINGS);
+        }, LV_EVENT_CLICKED, NULL);
+        s_lbl_tests_btn = lv_label_create(btn_tests);
+        lv_label_set_text(s_lbl_tests_btn, i18n_t(STR_WIFI_CONFIGURE));
+        lv_obj_center(s_lbl_tests_btn);
         row_y += row_h;
     }
 
@@ -468,6 +511,7 @@ void screen_settings_create(void)
         lv_obj_t *btn_sync = lv_btn_create(panel);
         lv_obj_set_size(btn_sync, btn_w, btn_h);
         lv_obj_set_pos(btn_sync, btn_x, row_y + 8);
+        lv_obj_set_ext_click_area(btn_sync, btn_ext);
         lv_obj_add_event_cb(btn_sync, [](lv_event_t *) {
             screen_ble_sync_show_modal();
         }, LV_EVENT_CLICKED, NULL);

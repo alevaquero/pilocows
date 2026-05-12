@@ -43,14 +43,14 @@ pub fn router(pool: SqlitePool) -> Router {
             "/api/v1/animals/:animal_id/pregnancies/:id",
             patch(health::patch_pregnancy).delete(health::delete_pregnancy),
         )
-        // TB Tests
+        // Tests
         .route(
-            "/api/v1/animals/:animal_id/tb-tests",
-            get(health::list_tb_tests).post(health::create_tb_test),
+            "/api/v1/animals/:animal_id/tests",
+            get(health::list_tests).post(health::create_test),
         )
         .route(
-            "/api/v1/animals/:animal_id/tb-tests/:id",
-            patch(health::patch_tb_test).delete(health::delete_tb_test),
+            "/api/v1/animals/:animal_id/tests/:id",
+            patch(health::patch_test).delete(health::delete_test),
         )
         // Weights
         .route(

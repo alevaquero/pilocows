@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Vaccination, Pregnancy, TbTest, Weight, Removal } from './health'
+import type { Vaccination, Pregnancy, Test, Weight, Removal } from './health'
 
 export interface Animal {
   id: number
@@ -18,7 +18,7 @@ export interface Animal {
 export interface AnimalProfile extends Animal {
   vaccinations: Vaccination[]
   pregnancies: Pregnancy[]
-  tb_tests: TbTest[]
+  tests: Test[]
   weights: Weight[]
   removal: Removal | null
 }

@@ -40,18 +40,20 @@ export interface CreatePregnancyPayload {
   notes?: string
 }
 
-// ── TB Tests ─────────────────────────────────────────────────────────────────
+// ── Tests ─────────────────────────────────────────────────────────────────────
 
-export interface TbTest {
+export interface Test {
   id: number
   animal_id: number
+  test_name: string
   result: string
   tested_at: string
   notes: string
   created_at: string
 }
 
-export interface CreateTbTestPayload {
+export interface CreateTestPayload {
+  test_name?: string
   result: string
   tested_at: string
   notes?: string
@@ -116,7 +118,8 @@ export interface PatchPregnancyPayload {
   notes?: string
 }
 
-export interface PatchTbTestPayload {
+export interface PatchTestPayload {
+  test_name?: string
   result?: string
   tested_at?: string
   notes?: string
@@ -151,15 +154,15 @@ export const healthApi = {
   deletePregnancy: (animal_id: number, id: number) =>
     api.delete<void>(`/animals/${animal_id}/pregnancies/${id}`),
 
-  // TB Tests
-  listTbTests: (animal_id: number) =>
-    api.get<TbTest[]>(`/animals/${animal_id}/tb-tests`),
-  createTbTest: (animal_id: number, p: CreateTbTestPayload) =>
-    api.post<TbTest>(`/animals/${animal_id}/tb-tests`, p),
-  patchTbTest: (animal_id: number, id: number, p: PatchTbTestPayload) =>
-    api.patch<TbTest>(`/animals/${animal_id}/tb-tests/${id}`, p),
-  deleteTbTest: (animal_id: number, id: number) =>
-    api.delete<void>(`/animals/${animal_id}/tb-tests/${id}`),
+  // Tests
+  listTests: (animal_id: number) =>
+    api.get<Test[]>(`/animals/${animal_id}/tests`),
+  createTest: (animal_id: number, p: CreateTestPayload) =>
+    api.post<Test>(`/animals/${animal_id}/tests`, p),
+  patchTest: (animal_id: number, id: number, p: PatchTestPayload) =>
+    api.patch<Test>(`/animals/${animal_id}/tests/${id}`, p),
+  deleteTest: (animal_id: number, id: number) =>
+    api.delete<void>(`/animals/${animal_id}/tests/${id}`),
 
   // Weights
   listWeights: (animal_id: number) =>

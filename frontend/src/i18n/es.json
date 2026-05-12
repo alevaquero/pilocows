@@ -44,7 +44,7 @@
     "profile": "Perfil",
     "vaccinations": "Vacunaciones",
     "pregnancies": "Prenez",
-    "tb_tests": "Test TB",
+    "tests": "Tests",
     "weights": "Pesos",
     "remove": "Dar de baja",
     "add": "Agregar registro",
@@ -52,7 +52,9 @@
     "delete": "Eliminar",
     "delete_confirm": "¿Eliminar este registro?",
     "edit_animal": "Editar",
-    "no_records": "Sin registros."
+    "no_records": "Sin registros.",
+    "test_name": "Tipo de test",
+    "test_name_placeholder": "Ej: Brucelosis, Tuberculosis"
   },
   "vaccination": {
     "vaccine": "Vacuna",
@@ -73,7 +75,7 @@
     "rejected": "Descarte",
     "notes": "Notas"
   },
-  "tb_test": {
+  "test": {
     "result": "Resultado",
     "tested_at": "Fecha de test",
     "negative": "Negativo",
@@ -122,6 +124,7 @@
     "accepted": "aceptados",
     "unregistered": "caravanas no registradas",
     "register_tag": "Registrar",
+    "register_all": "Registrar Todas",
     "registered_ok": "Registrada",
     "no_unregistered": "Todas las caravanas son conocidas."
   },
@@ -132,7 +135,7 @@
     "type_weighing": "Pesaje",
     "type_vaccination": "Vacunacion",
     "type_pregnancy": "Prenez",
-    "type_tb_test": "Test TB",
+    "type_test": "Test",
     "records": "registros",
     "farm": "Campo",
     "operator": "Operador",

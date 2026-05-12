@@ -29,12 +29,12 @@ WHERE id NOT IN (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_weights_sync
     ON weights(animal_id, weighed_at);
 
-DELETE FROM tb_tests
+DELETE FROM tests
 WHERE id NOT IN (
-    SELECT MIN(id) FROM tb_tests GROUP BY animal_id, tested_at
+    SELECT MIN(id) FROM tests GROUP BY animal_id, tested_at
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_tb_tests_sync
-    ON tb_tests(animal_id, tested_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tests_sync
+    ON tests(animal_id, tested_at);
 
 DELETE FROM vaccinations
 WHERE id NOT IN (

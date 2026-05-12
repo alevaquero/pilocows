@@ -217,9 +217,10 @@ def create_pregnancy(base_url: str, animal_id: int, event_date: str) -> None:
     post(base_url, f"/animals/{animal_id}/pregnancies", body)
 
 
-def create_tb_test(base_url: str, animal_id: int, event_date: str) -> None:
+def create_test(base_url: str, animal_id: int, event_date: str) -> None:
     result = random.choices(TB_RESULTS, weights=[88, 5, 7])[0]
-    post(base_url, f"/animals/{animal_id}/tb-tests", {
+    post(base_url, f"/animals/{animal_id}/tests", {
+        "test_name": random.choice(["Brucella", "Tuberculosis"]),
         "result":    result,
         "tested_at": event_date,
         "notes":     "",
@@ -246,7 +247,7 @@ def create_weight(base_url: str, animal_id: int, category: str, event_date: str)
     })
 
 
-EVENT_TYPES = ["vaccination", "pregnancy", "tb_test", "weight"]
+EVENT_TYPES = ["vaccination", "pregnancy", "test", "weight"]
 
 
 # ── Worker ────────────────────────────────────────────────────────────────────

@@ -19,6 +19,8 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    tracing::info!("pilocows-backend v{}", env!("CARGO_PKG_VERSION"));
+
     // Config
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "sqlite://pilocows.db".to_string());

@@ -69,14 +69,15 @@ pub async fn backfill_scan_events(
                     .await?;
                 }
             }
-            "tb_test" => {
-                if let Some(ref result) = scan.tb_result {
+            "test" => {
+                if let Some(ref result) = scan.test_result {
                     sqlx::query(
-                        "INSERT OR IGNORE INTO tb_tests
-                         (animal_id, result, tested_at, notes)
-                         VALUES (?, ?, ?, ?)",
+                        "INSERT OR IGNORE INTO tests
+                         (animal_id, test_name, result, tested_at, notes)
+                         VALUES (?, ?, ?, ?, ?)",
                     )
                     .bind(animal_id)
+                    .bind(scan.test_name.as_deref().unwrap_or(""))
                     .bind(result)
                     .bind(&scan.scanned_at)
                     .bind(&scan.notes)

@@ -44,7 +44,7 @@
     "profile": "Profile",
     "vaccinations": "Vaccinations",
     "pregnancies": "Pregnancies",
-    "tb_tests": "TB Tests",
+    "tests": "Tests",
     "weights": "Weights",
     "remove": "Remove from herd",
     "add": "Add record",
@@ -52,7 +52,9 @@
     "delete": "Delete",
     "delete_confirm": "Delete this record?",
     "edit_animal": "Edit",
-    "no_records": "No records."
+    "no_records": "No records.",
+    "test_name": "Test Type",
+    "test_name_placeholder": "e.g. Brucella, Tuberculosis"
   },
   "vaccination": {
     "vaccine": "Vaccine",
@@ -73,7 +75,7 @@
     "rejected": "Rejected",
     "notes": "Notes"
   },
-  "tb_test": {
+  "test": {
     "result": "Result",
     "tested_at": "Test Date",
     "negative": "Negative",
@@ -122,6 +124,7 @@
     "accepted": "accepted",
     "unregistered": "unregistered tags",
     "register_tag": "Register Tag",
+    "register_all": "Register All",
     "registered_ok": "Registered",
     "no_unregistered": "All tags are known."
   },
@@ -132,7 +135,7 @@
     "type_weighing": "Weighing",
     "type_vaccination": "Vaccination",
     "type_pregnancy": "Pregnancy",
-    "type_tb_test": "TB Test",
+    "type_test": "Test",
     "records": "records",
     "farm": "Farm",
     "operator": "Operator",

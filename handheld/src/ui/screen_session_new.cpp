@@ -39,6 +39,14 @@ static lv_obj_t *s_vax_cbs[VACCINE_LIST_MAX];
 static uint8_t   s_vax_ids[VACCINE_LIST_MAX];
 static int       s_vax_count = 0;
 
+// ── Test dropdown ─────────────────────────────────────────────────────────────
+static lv_obj_t *s_test_section;  // container, hidden unless type=TEST
+static lv_obj_t *s_lbl_test;
+static lv_obj_t *s_dd_test;       // single-select dropdown
+static test_cfg_t s_test_list_buf[TEST_LIST_MAX];
+static int        s_test_list_count = 0;
+static uint8_t    s_selected_test_id = 0;
+
 static lv_obj_t *s_scr = NULL;
 
 // Normal (non-keyboard) positions of body rows, relative to s_content.
@@ -50,6 +58,7 @@ static lv_obj_t *s_scr = NULL;
 #define ROW_NOTE_TA_Y    118
 #define ROW_NOTE_LBL_Y   127
 #define ROW_VAX_Y        170
+#define ROW_TEST_Y       170   // same y as vax section (only one visible at a time)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -59,12 +68,12 @@ static void build_type_options(char *buf, size_t len)
 {
     // Order must match session_type_t values 0-5
     const char *types[] = {
-        i18n_t("General"),
-        i18n_t("Weighing"),
-        i18n_t("Vaccination"),
-        i18n_t("Pregnancy Check"),
-        i18n_t("TB Test"),
-        i18n_t("Removal"),
+        i18n_t(STR_EVENT_GENERAL),
+        i18n_t(STR_EVENT_WEIGHING),
+        i18n_t(STR_EVENT_VACCINATION),
+        i18n_t(STR_EVENT_PREGNANCY),
+        i18n_t(STR_EVENT_TEST),
+        i18n_t(STR_EVENT_REMOVAL),
     };
     buf[0] = '\0';
     for (int i = 0; i < 6; i++) {
@@ -85,6 +94,35 @@ static void update_vax_visibility(void)
     } else {
         lv_obj_add_flag(s_vax_section, LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+static void update_test_visibility(void)
+{
+    if (selected_type() == SESSION_TYPE_TEST) {
+        lv_obj_clear_flag(s_test_section, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(s_test_section, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void populate_tests(void)
+{
+    s_test_list_count = test_list(s_test_list_buf, TEST_LIST_MAX);
+
+    // Build dropdown options string
+    char opts[TEST_LIST_MAX * (TEST_NAME_MAX + 1) + 32];
+    opts[0] = '\0';
+    for (int i = 0; i < s_test_list_count; i++) {
+        if (i > 0) strncat(opts, "\n", sizeof(opts) - strlen(opts) - 1);
+        strncat(opts, s_test_list_buf[i].name, sizeof(opts) - strlen(opts) - 1);
+    }
+    if (s_test_list_count == 0) {
+        strncat(opts, "—", sizeof(opts) - strlen(opts) - 1);
+    }
+    lv_dropdown_set_options(s_dd_test, opts);
+    lv_dropdown_set_selected(s_dd_test, 0);
+    // Update selected_test_id from first item
+    s_selected_test_id = (s_test_list_count > 0) ? s_test_list_buf[0].id : 0;
 }
 
 static void populate_vaccines(void)
@@ -129,6 +167,15 @@ static void on_type_changed(lv_event_t *e)
     session_build_default_name(selected_type(), def_name, sizeof(def_name));
     lv_textarea_set_text(s_ta_name, def_name);
     update_vax_visibility();
+    update_test_visibility();
+}
+
+static void on_test_dd_changed(lv_event_t *e)
+{
+    (void)e;
+    uint16_t sel = lv_dropdown_get_selected(s_dd_test);
+    s_selected_test_id = (sel < (uint16_t)s_test_list_count)
+                         ? s_test_list_buf[sel].id : 0;
 }
 
 static lv_obj_t *s_kb_ta = NULL;  // which textarea the keyboard is editing
@@ -156,6 +203,9 @@ static void restore_layout(void)
     lv_obj_clear_flag(s_ta_note,        LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_pos(s_ta_note, 70, ROW_NOTE_TA_Y);
     lv_obj_set_size(s_ta_note, 398, 44);
+    // Sections
+    update_vax_visibility();
+    update_test_visibility();
     // Keyboard + scroll
     lv_obj_add_flag(s_kb, LV_OBJ_FLAG_HIDDEN);
     lv_obj_scroll_to_y(s_content, 0, LV_ANIM_OFF);
@@ -170,6 +220,7 @@ static void show_keyboard(lv_obj_t *ta, lv_obj_t *lbl)
     lv_obj_add_flag(s_lbl_type_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_dd_type,        LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_vax_section,    LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_test_section,   LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_lbl_name_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_ta_name,        LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_lbl_note_label, LV_OBJ_FLAG_HIDDEN);
@@ -251,7 +302,8 @@ static void on_create(lv_event_t *e)
 
     uint32_t new_id = 0;
     esp_err_t err = session_create(type, name[0] ? name : NULL,
-                                   vax_count ? vax_ids : NULL, vax_count, &new_id);
+                                   vax_count ? vax_ids : NULL, vax_count,
+                                   s_selected_test_id, &new_id);
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "Created session %" PRIu32, new_id);
         const char *note = lv_textarea_get_text(s_ta_note);
@@ -282,6 +334,10 @@ static void on_screen_loaded(lv_event_t *e)
     // Populate vaccines list
     populate_vaccines();
     update_vax_visibility();
+
+    // Populate tests list
+    populate_tests();
+    update_test_visibility();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -412,6 +468,31 @@ void screen_session_new_create(void)
 
     lv_obj_add_flag(s_vax_section, LV_OBJ_FLAG_HIDDEN);
 
+    // ── Test section ───────────────────────────────────────────────────────────
+    // Shown when type=SESSION_TYPE_TEST; same position as vax section.
+    s_test_section = lv_obj_create(s_content);
+    lv_obj_set_size(s_test_section, 456, 78);
+    lv_obj_set_pos(s_test_section, 12, ROW_TEST_Y);
+    lv_obj_set_style_border_width(s_test_section, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_test_section, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_test_section, 6, LV_PART_MAIN);
+    lv_obj_clear_flag(s_test_section, LV_OBJ_FLAG_SCROLLABLE);
+
+    s_lbl_test = lv_label_create(s_test_section);
+    lv_label_set_text(s_lbl_test, i18n_t(STR_SESSION_SELECT_TEST));
+    lv_obj_set_style_text_font(s_lbl_test, &pilocows_font_18, LV_PART_MAIN);
+    lv_obj_set_pos(s_lbl_test, 0, 0);
+
+    s_dd_test = lv_dropdown_create(s_test_section);
+    lv_obj_set_size(s_dd_test, 440, 44);
+    lv_obj_align(s_dd_test, LV_ALIGN_TOP_LEFT, 0, 24);
+    lv_obj_set_style_text_font(s_dd_test, &pilocows_font_20, LV_PART_MAIN);
+    lv_obj_set_style_text_font(lv_dropdown_get_list(s_dd_test), &pilocows_font_20, LV_PART_MAIN);
+    lv_dropdown_set_options(s_dd_test, "—");
+    lv_obj_add_event_cb(s_dd_test, on_test_dd_changed, LV_EVENT_VALUE_CHANGED, NULL);
+
+    lv_obj_add_flag(s_test_section, LV_OBJ_FLAG_HIDDEN);
+
     // ── Keyboard (on s_scr so it overlays s_content; hidden initially) ─────────
     s_kb = lv_keyboard_create(s_scr);
     lv_obj_set_size(s_kb, 480, 200);
@@ -444,6 +525,7 @@ void screen_session_new_refresh_language(void)
     lv_label_set_text(s_lbl_note_label,  i18n_t(STR_NOTE));
     lv_label_set_text(s_lbl_btn_create,  i18n_t(STR_SESSION_CREATE));
     lv_label_set_text(s_lbl_vax,         i18n_t(STR_SESSION_SELECT_VAX));
+    lv_label_set_text(s_lbl_test,        i18n_t(STR_SESSION_SELECT_TEST));
 
     // Rebuild dropdown options in the new language
     char type_opts[256];

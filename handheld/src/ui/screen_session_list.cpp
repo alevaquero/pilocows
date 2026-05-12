@@ -22,25 +22,19 @@ static lv_obj_t *s_lbl_empty;
 // ── List widget ───────────────────────────────────────────────────────────────
 static lv_obj_t *s_list;
 
-// ── Detail panel (full-screen overlay when a session is tapped) ───────────────
-static lv_obj_t *s_detail_panel;
-static lv_obj_t *s_lbl_detail_name;
-static lv_obj_t *s_lbl_detail_info;
-static lv_obj_t *s_btn_set_current;
-static lv_obj_t *s_lbl_btn_set_current;
-static lv_obj_t *s_btn_delete;
-static lv_obj_t *s_lbl_btn_delete;
-static lv_obj_t *s_btn_edit_note;
-static lv_obj_t *s_lbl_btn_edit_note;
-static lv_obj_t *s_btn_detail_cancel;
-static lv_obj_t *s_lbl_btn_detail_cancel;
+// ── Delete confirmation popup ─────────────────────────────────────────────────
+static lv_obj_t *s_confirm_panel;
+static lv_obj_t *s_lbl_confirm_msg;
+static lv_obj_t *s_lbl_confirm_ok;
+static lv_obj_t *s_lbl_confirm_cancel;
+static uint32_t  s_confirm_id = 0;
 
 // ── Note edit modal ────────────────────────────────────────────────────────────
 static lv_obj_t *s_note_overlay;
 static lv_obj_t *s_ta_note_edit;
 static lv_obj_t *s_kb_note_edit;
 
-// Currently selected session in the detail panel
+// Currently selected session for note editing
 static uint32_t s_selected_id   = 0;
 static char     s_selected_note[SESSION_NOTE_MAX] = {0};
 
@@ -56,7 +50,7 @@ static const char *type_en_str(uint8_t type)
         case SESSION_TYPE_WEIGHING:    return "Weighing";
         case SESSION_TYPE_VACCINATION: return "Vaccination";
         case SESSION_TYPE_PREGNANCY:   return "Pregnancy Check";
-        case SESSION_TYPE_TB_TEST:     return "TB Test";
+        case SESSION_TYPE_TEST:        return "Test";
         case SESSION_TYPE_REMOVAL:     return "Removal";
         default:                       return "General";
     }
@@ -65,32 +59,23 @@ static const char *type_en_str(uint8_t type)
 static void open_note_modal(void);
 static void close_note_modal(void);
 
-static void show_detail(const session_meta_t *m)
+// Creates a flat icon button (transparent bg, coloured symbol) inside parent.
+// Returns the button object; caller must align and add event callback.
+static lv_obj_t *make_icon_btn(lv_obj_t *parent, const char *symbol, lv_color_t color)
 {
-    s_selected_id = m->id;
-    strlcpy(s_selected_note, m->note, sizeof(s_selected_note));
-
-    lv_label_set_text(s_lbl_detail_name, m->name);
-
-    const char *type_str = i18n_t(type_en_str(m->type));
-    char info[64];
-    snprintf(info, sizeof(info), "%s | %" PRIu32, type_str, m->tag_count);
-    lv_label_set_text(s_lbl_detail_info, info);
-
-    // Hide list and header — detail is full-screen
-    lv_obj_add_flag(s_hdr,  LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_list, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_lbl_empty, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(s_detail_panel, LV_OBJ_FLAG_HIDDEN);
-}
-
-static void hide_detail(void)
-{
-    s_selected_id = 0;
-    lv_obj_add_flag(s_detail_panel, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(s_hdr,  LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(s_list, LV_OBJ_FLAG_HIDDEN);
-    // s_lbl_empty visibility managed by rebuild_list()
+    lv_obj_t *btn = lv_btn_create(parent);
+    lv_obj_set_size(btn, 36, 36);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_20,     LV_STATE_PRESSED | LV_PART_MAIN);
+    lv_obj_set_style_shadow_width(btn, 0, LV_PART_MAIN);
+    lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN);
+    lv_obj_set_ext_click_area(btn, 4);
+    lv_obj_t *lbl = lv_label_create(btn);
+    lv_label_set_text(lbl, symbol);
+    lv_obj_set_style_text_font(lbl, &pilocows_font_18, LV_PART_MAIN);
+    lv_obj_set_style_text_color(lbl, color, LV_PART_MAIN);
+    lv_obj_center(lbl);
+    return btn;
 }
 
 static void rebuild_list(void)
@@ -106,39 +91,68 @@ static void rebuild_list(void)
     }
     lv_obj_add_flag(s_lbl_empty, LV_OBJ_FLAG_HIDDEN);
 
+    // copy_buf lives for the lifetime of the list widgets — captured as user_data
+    // by the per-row callbacks. Static so it persists across redraws.
+    static session_meta_t copy_buf[LIST_MAX];
+
     for (int i = 0; i < count; i++) {
-        const session_meta_t *m = &sessions[i];
+        copy_buf[i] = sessions[i];
+        const session_meta_t *m = &copy_buf[i];
 
         lv_obj_t *row = lv_list_add_btn(s_list, NULL, "");
-        lv_obj_set_height(row, 44);
+        lv_obj_set_height(row, 48);
         lv_obj_set_style_border_width(row, 1, LV_PART_MAIN);
         lv_obj_set_style_pad_all(row, 0, LV_PART_MAIN);
-        lv_obj_set_layout(row, 0);  // disable flex (LV_LAYOUT_NONE=0) so our alignment works
+        lv_obj_set_layout(row, 0);  // LV_LAYOUT_NONE — manual placement
 
-        // Session name
+        // ── Session name ──────────────────────────────────────────────────────
         lv_obj_t *lbl_name = lv_label_create(row);
         lv_label_set_text(lbl_name, m->name);
         lv_label_set_long_mode(lbl_name, LV_LABEL_LONG_DOT);
-        lv_obj_set_width(lbl_name, 230);
+        lv_obj_set_width(lbl_name, 200);
         lv_obj_set_style_text_font(lbl_name, &pilocows_font_18, LV_PART_MAIN);
-        lv_obj_align(lbl_name, LV_ALIGN_LEFT_MID, 4, 0);
+        lv_obj_align(lbl_name, LV_ALIGN_LEFT_MID, 6, 0);
 
-        // Tag count column (middle-right)
+        // ── Tag count ─────────────────────────────────────────────────────────
         char cnt_buf[12];
         snprintf(cnt_buf, sizeof(cnt_buf), "%" PRIu32, m->tag_count);
         lv_obj_t *lbl_cnt = lv_label_create(row);
         lv_label_set_text(lbl_cnt, cnt_buf);
         lv_obj_set_style_text_font(lbl_cnt, &pilocows_font_18, LV_PART_MAIN);
         lv_obj_set_style_text_color(lbl_cnt, lv_palette_main(LV_PALETTE_BLUE_GREY), LV_PART_MAIN);
-        lv_obj_align(lbl_cnt, LV_ALIGN_RIGHT_MID, -82, 0);
+        // Sits between name and the three icon buttons
+        lv_obj_align(lbl_cnt, LV_ALIGN_RIGHT_MID, -126, 0);
 
-        // Pass session id via user_data on click
-        static session_meta_t copy_buf[LIST_MAX];
-        copy_buf[i] = *m;
-        lv_obj_add_event_cb(row, [](lv_event_t *ev) {
-            // Retrieve meta from the list item's user_data
+        // ── Activate (Set as Current) — LV_SYMBOL_PLAY ────────────────────────
+        lv_obj_t *btn_play = make_icon_btn(row, LV_SYMBOL_PLAY,
+                                           lv_palette_main(LV_PALETTE_BLUE));
+        lv_obj_align(btn_play, LV_ALIGN_RIGHT_MID, -84, 0);
+        lv_obj_add_event_cb(btn_play, [](lv_event_t *ev) {
             session_meta_t *meta = (session_meta_t *)lv_event_get_user_data(ev);
-            show_detail(meta);
+            session_set_active(meta->id);
+            ESP_LOGI(TAG, "Set current session %" PRIu32, meta->id);
+            ui_manager_show(SCREEN_SCAN);
+        }, LV_EVENT_CLICKED, &copy_buf[i]);
+
+        // ── Edit note — LV_SYMBOL_EDIT ────────────────────────────────────────
+        lv_obj_t *btn_edit = make_icon_btn(row, LV_SYMBOL_EDIT,
+                                           lv_palette_main(LV_PALETTE_BLUE_GREY));
+        lv_obj_align(btn_edit, LV_ALIGN_RIGHT_MID, -44, 0);
+        lv_obj_add_event_cb(btn_edit, [](lv_event_t *ev) {
+            session_meta_t *meta = (session_meta_t *)lv_event_get_user_data(ev);
+            s_selected_id = meta->id;
+            strlcpy(s_selected_note, meta->note, sizeof(s_selected_note));
+            open_note_modal();
+        }, LV_EVENT_CLICKED, &copy_buf[i]);
+
+        // ── Delete — LV_SYMBOL_TRASH ──────────────────────────────────────────
+        lv_obj_t *btn_trash = make_icon_btn(row, LV_SYMBOL_TRASH,
+                                            lv_palette_main(LV_PALETTE_RED));
+        lv_obj_align(btn_trash, LV_ALIGN_RIGHT_MID, -4, 0);
+        lv_obj_add_event_cb(btn_trash, [](lv_event_t *ev) {
+            session_meta_t *meta = (session_meta_t *)lv_event_get_user_data(ev);
+            s_confirm_id = meta->id;
+            lv_obj_clear_flag(s_confirm_panel, LV_OBJ_FLAG_HIDDEN);
         }, LV_EVENT_CLICKED, &copy_buf[i]);
     }
 }
@@ -162,25 +176,12 @@ static void close_note_modal(void)
     session_save_note(s_selected_id, s_selected_note);
     lv_obj_add_flag(s_note_overlay, LV_OBJ_FLAG_HIDDEN);
     lv_keyboard_set_textarea(s_kb_note_edit, NULL);
+    // Refresh list so updated note is available on next tap
+    rebuild_list();
 }
 
-static void on_note_edit_btn(lv_event_t *e)
-{
-    (void)e;
-    open_note_modal();
-}
-
-static void on_note_done(lv_event_t *e)
-{
-    (void)e;
-    close_note_modal();
-}
-
-static void on_note_kb_ready(lv_event_t *e)
-{
-    (void)e;
-    close_note_modal();
-}
+static void on_note_done(lv_event_t *e)      { (void)e; close_note_modal(); }
+static void on_note_kb_ready(lv_event_t *e)  { (void)e; close_note_modal(); }
 
 static void on_note_ta_focused(lv_event_t *e)
 {
@@ -196,44 +197,37 @@ static void on_note_ta_focused(lv_event_t *e)
 static void on_back(lv_event_t *e)
 {
     (void)e;
-    hide_detail();
     ui_manager_show(SCREEN_SESSION_MENU);
 }
 
-static void on_detail_close(lv_event_t *e)
+static void on_confirm_delete(lv_event_t *e)
 {
     (void)e;
-    hide_detail();
-}
-
-static void on_set_current(lv_event_t *e)
-{
-    (void)e;
-    if (s_selected_id == 0) return;
-    session_set_active(s_selected_id);
-    ESP_LOGI(TAG, "Set current session %" PRIu32, s_selected_id);
-    ui_manager_show(SCREEN_SCAN);
-}
-
-static void on_delete(lv_event_t *e)
-{
-    (void)e;
-    if (s_selected_id == 0) return;
-    esp_err_t err = session_delete(s_selected_id);
+    lv_obj_add_flag(s_confirm_panel, LV_OBJ_FLAG_HIDDEN);
+    if (s_confirm_id == 0) return;
+    esp_err_t err = session_delete(s_confirm_id);
     if (err == ESP_OK) {
-        ESP_LOGI(TAG, "Deleted session %" PRIu32, s_selected_id);
+        ESP_LOGI(TAG, "Deleted session %" PRIu32, s_confirm_id);
     } else {
         ESP_LOGE(TAG, "Delete session %" PRIu32 " failed: %s",
-                 s_selected_id, esp_err_to_name(err));
+                 s_confirm_id, esp_err_to_name(err));
     }
-    hide_detail();
+    s_confirm_id = 0;
     rebuild_list();
+}
+
+static void on_confirm_cancel(lv_event_t *e)
+{
+    (void)e;
+    s_confirm_id = 0;
+    lv_obj_add_flag(s_confirm_panel, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void on_screen_loaded(lv_event_t *e)
 {
     (void)e;
-    hide_detail();
+    lv_obj_add_flag(s_confirm_panel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_note_overlay,  LV_OBJ_FLAG_HIDDEN);
     rebuild_list();
 }
 
@@ -288,92 +282,73 @@ void screen_session_list_create(void)
     lv_obj_set_size(s_list, 480, 280);
     lv_obj_set_pos(s_list, 0, 40);
     lv_obj_set_style_border_width(s_list, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_row(s_list, 3, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(s_list, 2, LV_PART_MAIN);
     lv_obj_set_style_pad_all(s_list, 4, LV_PART_MAIN);
 
-    // ── Detail panel (full-screen — covers list + header) ─────────────────────
+    // ── Delete confirmation popup ─────────────────────────────────────────────
+    //
+    // Centred card (280×140) over a semi-transparent full-screen dimmer.
+    s_confirm_panel = lv_obj_create(s_scr);
+    lv_obj_set_size(s_confirm_panel, 480, 320);
+    lv_obj_set_pos(s_confirm_panel, 0, 0);
+    lv_obj_clear_flag(s_confirm_panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_color(s_confirm_panel, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_confirm_panel, LV_OPA_50, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_confirm_panel, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_confirm_panel, 0, LV_PART_MAIN);
+    lv_obj_add_flag(s_confirm_panel, LV_OBJ_FLAG_HIDDEN);
+
+    // Centred white card
+    lv_obj_t *card = lv_obj_create(s_confirm_panel);
+    lv_obj_set_size(card, 300, 150);
+    lv_obj_align(card, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_radius(card, 10, LV_PART_MAIN);
+    lv_obj_set_style_border_width(card, 1, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(card, 16, LV_PART_MAIN);
+
+    s_lbl_confirm_msg = lv_label_create(card);
+    lv_label_set_text(s_lbl_confirm_msg, i18n_t(STR_SESSION_CONFIRM_DELETE));
+    lv_obj_set_style_text_font(s_lbl_confirm_msg, &pilocows_font_18, LV_PART_MAIN);
+    lv_obj_set_width(s_lbl_confirm_msg, 268);
+    lv_label_set_long_mode(s_lbl_confirm_msg, LV_LABEL_LONG_WRAP);
+    lv_obj_align(s_lbl_confirm_msg, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    // Cancel button (left)
+    lv_obj_t *btn_cancel = lv_btn_create(card);
+    lv_obj_set_size(btn_cancel, 120, 44);
+    lv_obj_align(btn_cancel, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_set_style_border_width(btn_cancel, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(btn_cancel, 6, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(btn_cancel, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_ext_click_area(btn_cancel, 8);
+    lv_obj_add_event_cb(btn_cancel, on_confirm_cancel, LV_EVENT_CLICKED, NULL);
+    s_lbl_confirm_cancel = lv_label_create(btn_cancel);
+    lv_label_set_text(s_lbl_confirm_cancel, i18n_t(STR_BTN_CANCEL));
+    lv_obj_set_style_text_font(s_lbl_confirm_cancel, &pilocows_font_18, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_lbl_confirm_cancel, lv_color_black(), LV_PART_MAIN);
+    lv_obj_center(s_lbl_confirm_cancel);
+
+    // Delete button (right)
+    lv_obj_t *btn_ok = lv_btn_create(card);
+    lv_obj_set_size(btn_ok, 120, 44);
+    lv_obj_align(btn_ok, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_set_style_bg_color(btn_ok, lv_color_hex(0xC0392B), LV_PART_MAIN);
+    lv_obj_set_style_radius(btn_ok, 6, LV_PART_MAIN);
+    lv_obj_set_ext_click_area(btn_ok, 8);
+    lv_obj_add_event_cb(btn_ok, on_confirm_delete, LV_EVENT_CLICKED, NULL);
+    s_lbl_confirm_ok = lv_label_create(btn_ok);
+    lv_label_set_text(s_lbl_confirm_ok, i18n_t(STR_SESSION_DELETE));
+    lv_obj_set_style_text_font(s_lbl_confirm_ok, &pilocows_font_18, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_lbl_confirm_ok, lv_color_white(), LV_PART_MAIN);
+    lv_obj_center(s_lbl_confirm_ok);
+
+    // ── Note edit modal overlay ────────────────────────────────────────────────
     //
     // Layout (480×320):
-    //   y=  0, h=40  Mini-header: session name (title-sized)
-    //   y= 48, h=26  Info row: type | count | status
-    //   y= 90, h=50  Row 1: Set as Current  |  Close Session   (open sessions)
-    //                       Reopen                             (closed sessions)
-    //   y=150, h=50  Row 2: Delete (always)
-    //   y=270, h=50  Cancel button (bottom)
-    s_detail_panel = lv_obj_create(s_scr);
-    lv_obj_set_size(s_detail_panel, 480, 320);
-    lv_obj_set_pos(s_detail_panel, 0, 0);
-    lv_obj_set_style_border_width(s_detail_panel, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(s_detail_panel, 0, LV_PART_MAIN);
-    lv_obj_clear_flag(s_detail_panel, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_pad_all(s_detail_panel, 16, LV_PART_MAIN);
-
-    s_lbl_detail_name = lv_label_create(s_detail_panel);
-    lv_label_set_text(s_lbl_detail_name, "");
-    lv_label_set_long_mode(s_lbl_detail_name, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(s_lbl_detail_name, 448);
-    lv_obj_set_style_text_font(s_lbl_detail_name, &pilocows_font_22, LV_PART_MAIN);
-    lv_obj_set_pos(s_lbl_detail_name, 0, 0);
-
-    s_lbl_detail_info = lv_label_create(s_detail_panel);
-    lv_label_set_text(s_lbl_detail_info, "");
-    lv_obj_set_style_text_font(s_lbl_detail_info, &pilocows_font_18, LV_PART_MAIN);
-    lv_obj_set_pos(s_lbl_detail_info, 0, 32);
-
-    // ── Set as Current button (full-width) ────────────────────────────────────
-    s_btn_set_current = lv_btn_create(s_detail_panel);
-    lv_obj_set_size(s_btn_set_current, 448, 50);
-    lv_obj_set_pos(s_btn_set_current, 0, 74);
-    lv_obj_set_style_radius(s_btn_set_current, 6, LV_PART_MAIN);
-    lv_obj_set_ext_click_area(s_btn_set_current, 10);
-    lv_obj_add_event_cb(s_btn_set_current, on_set_current, LV_EVENT_CLICKED, NULL);
-    s_lbl_btn_set_current = lv_label_create(s_btn_set_current);
-    lv_label_set_text(s_lbl_btn_set_current, i18n_t(STR_SESSION_SET_CURRENT));
-    lv_obj_set_style_text_font(s_lbl_btn_set_current, &pilocows_font_18, LV_PART_MAIN);
-    lv_obj_center(s_lbl_btn_set_current);
-
-    // ── Delete button (always visible) ────────────────────────────────────────
-    s_btn_delete = lv_btn_create(s_detail_panel);
-    lv_obj_set_size(s_btn_delete, 448, 50);
-    lv_obj_set_pos(s_btn_delete, 0, 134);
-    lv_obj_set_style_bg_color(s_btn_delete, lv_color_hex(0xC0392B), LV_PART_MAIN);
-    lv_obj_set_style_radius(s_btn_delete, 6, LV_PART_MAIN);
-    lv_obj_set_ext_click_area(s_btn_delete, 10);
-    lv_obj_add_event_cb(s_btn_delete, on_delete, LV_EVENT_CLICKED, NULL);
-    s_lbl_btn_delete = lv_label_create(s_btn_delete);
-    lv_label_set_text(s_lbl_btn_delete, i18n_t(STR_SESSION_DELETE));
-    lv_obj_set_style_text_color(s_lbl_btn_delete, lv_color_white(), LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_lbl_btn_delete, &pilocows_font_18, LV_PART_MAIN);
-    lv_obj_center(s_lbl_btn_delete);
-
-    // ── Edit note button (between Delete and Cancel) ──────────────────────────
-    s_btn_edit_note = lv_btn_create(s_detail_panel);
-    lv_obj_set_size(s_btn_edit_note, 448, 40);
-    lv_obj_set_pos(s_btn_edit_note, 0, 192);
-    lv_obj_set_style_radius(s_btn_edit_note, 6, LV_PART_MAIN);
-    lv_obj_set_ext_click_area(s_btn_edit_note, 10);
-    lv_obj_add_event_cb(s_btn_edit_note, on_note_edit_btn, LV_EVENT_CLICKED, NULL);
-    s_lbl_btn_edit_note = lv_label_create(s_btn_edit_note);
-    lv_label_set_text(s_lbl_btn_edit_note, i18n_t(STR_EDIT_SESSION_NOTE));
-    lv_obj_set_style_text_font(s_lbl_btn_edit_note, &pilocows_font_18, LV_PART_MAIN);
-    lv_obj_center(s_lbl_btn_edit_note);
-
-    // ── Cancel button (bottom) ────────────────────────────────────────────────
-    s_btn_detail_cancel = lv_btn_create(s_detail_panel);
-    lv_obj_set_size(s_btn_detail_cancel, 448, 50);
-    lv_obj_set_pos(s_btn_detail_cancel, 0, 238);
-    lv_obj_set_style_border_width(s_btn_detail_cancel, 1, LV_PART_MAIN);
-    lv_obj_set_style_radius(s_btn_detail_cancel, 6, LV_PART_MAIN);
-    lv_obj_set_ext_click_area(s_btn_detail_cancel, 10);
-    lv_obj_add_event_cb(s_btn_detail_cancel, on_detail_close, LV_EVENT_CLICKED, NULL);
-    s_lbl_btn_detail_cancel = lv_label_create(s_btn_detail_cancel);
-    lv_label_set_text(s_lbl_btn_detail_cancel, i18n_t(STR_BTN_CANCEL));
-    lv_obj_set_style_text_font(s_lbl_btn_detail_cancel, &pilocows_font_18, LV_PART_MAIN);
-    lv_obj_center(s_lbl_btn_detail_cancel);
-
-    lv_obj_add_flag(s_detail_panel, LV_OBJ_FLAG_HIDDEN);
-
-    // ── Note edit modal overlay (full-screen, on top of everything) ───────────
+    //   y=  0..50  header: "Session note" label + Done button
+    //   y= 54..119  textarea (65px)
+    //   y=120..320  keyboard (200px)
     s_note_overlay = lv_obj_create(s_scr);
     lv_obj_set_size(s_note_overlay, 480, 320);
     lv_obj_set_pos(s_note_overlay, 0, 0);
@@ -426,17 +401,16 @@ void screen_session_list_create(void)
 void screen_session_list_load(void)
 {
     lv_scr_load(s_scr);
-    // rebuild_list() and hide_detail() run via on_screen_loaded
+    // rebuild_list() and overlay resets run via on_screen_loaded
 }
 
 void screen_session_list_refresh_language(void)
 {
-    lv_label_set_text(s_lbl_title,                i18n_t(STR_SESSION_LIST));
-    lv_label_set_text(s_lbl_back,                 i18n_t(STR_BTN_BACK));
-    lv_label_set_text(s_lbl_btn_set_current,      i18n_t(STR_SESSION_SET_CURRENT));
-    lv_label_set_text(s_lbl_btn_delete,           i18n_t(STR_SESSION_DELETE));
-    lv_label_set_text(s_lbl_btn_edit_note,        i18n_t(STR_EDIT_SESSION_NOTE));
-    lv_label_set_text(s_lbl_btn_detail_cancel,    i18n_t(STR_BTN_CANCEL));
-    // Rebuild list rows so type/status strings update
+    lv_label_set_text(s_lbl_title,          i18n_t(STR_SESSION_LIST));
+    lv_label_set_text(s_lbl_back,           i18n_t(STR_BTN_BACK));
+    lv_label_set_text(s_lbl_confirm_msg,    i18n_t(STR_SESSION_CONFIRM_DELETE));
+    lv_label_set_text(s_lbl_confirm_ok,     i18n_t(STR_SESSION_DELETE));
+    lv_label_set_text(s_lbl_confirm_cancel, i18n_t(STR_BTN_CANCEL));
+    // Rebuild list rows so type strings pick up the new language
     rebuild_list();
 }

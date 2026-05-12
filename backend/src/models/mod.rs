@@ -119,12 +119,13 @@ pub struct CreatePregnancy {
     pub notes: String,
 }
 
-// ─── TB Tests ─────────────────────────────────────────────────────────────────
+// ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, FromRow)]
-pub struct TbTest {
+pub struct Test {
     pub id: i64,
     pub animal_id: i64,
+    pub test_name: String,
     pub result: String,
     pub tested_at: String,
     pub notes: String,
@@ -132,7 +133,9 @@ pub struct TbTest {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct CreateTbTest {
+pub struct CreateTest {
+    #[serde(default)]
+    pub test_name: String,
     pub result: String,
     pub tested_at: String,
     #[serde(default)]
@@ -199,7 +202,8 @@ pub struct PatchPregnancy {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct PatchTbTest {
+pub struct PatchTest {
+    pub test_name: Option<String>,
     pub result: Option<String>,
     pub tested_at: Option<String>,
     pub notes: Option<String>,
@@ -222,7 +226,8 @@ pub struct ScanEvent {
     pub scanned_at: String,
     pub weight_kg: Option<f64>,
     pub pregnancy_result: Option<String>,
-    pub tb_result: Option<String>,
+    pub test_result: Option<String>,
+    pub test_name: Option<String>,
     pub vaccines: String,
     pub notes: String,
     pub synced_at: String,
@@ -236,7 +241,8 @@ pub struct IncomingScan {
     pub scanned_at: String,
     pub weight_kg: Option<f64>,
     pub pregnancy_result: Option<String>,
-    pub tb_result: Option<String>,
+    pub test_result: Option<String>,
+    pub test_name: Option<String>,
     #[serde(default)]
     pub vaccines: String,
     #[serde(default)]
@@ -251,7 +257,7 @@ pub struct AnimalProfile {
     pub animal: AnimalWithTag,
     pub vaccinations: Vec<Vaccination>,
     pub pregnancies: Vec<Pregnancy>,
-    pub tb_tests: Vec<TbTest>,
+    pub tests: Vec<Test>,
     pub weights: Vec<Weight>,
     pub removal: Option<Removal>,
 }
@@ -357,7 +363,8 @@ pub struct IncomingSessionRecord {
     // Type-specific fields (only one will be present per record)
     pub weight_kg: Option<f64>,
     pub pregnancy: Option<String>,
-    pub tb_result: Option<String>,
+    pub test_result: Option<String>,
+    pub test_name: Option<String>,
     pub vaccines: Option<String>,
     #[serde(default)]
     pub note: String,

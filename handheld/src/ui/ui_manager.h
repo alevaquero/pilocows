@@ -11,6 +11,7 @@ typedef enum {
     SCREEN_SETTINGS,
     SCREEN_WIFI,
     SCREEN_VACCINE_SETTINGS,
+    SCREEN_TEST_SETTINGS,
 } screen_id_t;
 
 // Initialize UI — call after display_init().

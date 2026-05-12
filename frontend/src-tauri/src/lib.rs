@@ -1,6 +1,8 @@
 mod ble;
 mod commands;
 
+use tauri::Manager;
+
 use btleplug::platform::Adapter;
 use tokio::sync::Mutex;
 
@@ -25,6 +27,13 @@ impl AppState {
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState::new())
+        .setup(|app| {
+            let version = app.package_info().version.to_string();
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_title(&format!("Pilocows {}", version));
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::ble_scan,
             commands::ble_connect,

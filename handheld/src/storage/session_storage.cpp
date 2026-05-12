@@ -23,6 +23,7 @@ static const char *NVS_NEXT_ID     = "next_sess_id";
 #define SPIFFS_BASE     "/spiffs"
 #define SESS_IDX_PATH   "/spiffs/sess_idx.bin"
 #define VACCINE_PATH    "/spiffs/vaccines.bin"
+#define TEST_PATH       "/spiffs/tests.bin"
 
 // ── Internal state ────────────────────────────────────────────────────────────
 static bool              s_mounted      = false;
@@ -165,6 +166,7 @@ esp_err_t session_storage_init(void)
 
 esp_err_t session_create(session_type_t type, const char *name,
                           const uint8_t *vax_ids, uint8_t vax_count,
+                          uint8_t test_id,
                           uint32_t *out_id)
 {
     LOCK();
@@ -193,6 +195,11 @@ esp_err_t session_create(session_type_t type, const char *name,
     if (type == SESSION_TYPE_VACCINATION && vax_ids && vax_count > 0) {
         m.vax_count = (vax_count <= SESSION_VAX_MAX) ? vax_count : SESSION_VAX_MAX;
         memcpy(m.vax_ids, vax_ids, m.vax_count);
+    }
+
+    // Test
+    if (type == SESSION_TYPE_TEST) {
+        m.test_id = test_id;
     }
 
     esp_err_t err = meta_write(&m);
@@ -634,6 +641,122 @@ bool vaccine_get_name(uint8_t id, char *out_name, size_t max_len)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Public API — test configuration (mirrors vaccine API, different path/limits)
+// ─────────────────────────────────────────────────────────────────────────────
+
+int test_list(test_cfg_t *out, int max_count)
+{
+    if (!out || max_count <= 0) return 0;
+
+    LOCK();
+    FILE *f = fopen(TEST_PATH, "rb");
+    if (!f) { UNLOCK(); return 0; }
+
+    int n = 0;
+    test_cfg_t t;
+    while (n < max_count && fread(&t, sizeof(test_cfg_t), 1, f) == 1) {
+        if (t.id != 0 && t.active) {
+            out[n++] = t;
+        }
+    }
+    fclose(f);
+    UNLOCK();
+    return n;
+}
+
+esp_err_t test_add(const char *name, uint8_t *out_id)
+{
+    if (!name || !name[0]) return ESP_ERR_INVALID_ARG;
+
+    LOCK();
+
+    uint8_t max_id = 0;
+    FILE *f = fopen(TEST_PATH, "rb");
+    if (f) {
+        test_cfg_t t;
+        while (fread(&t, sizeof(test_cfg_t), 1, f) == 1) {
+            if (t.id > max_id) max_id = t.id;
+        }
+        fclose(f);
+    }
+
+    if (max_id >= TEST_LIST_MAX) { UNLOCK(); return ESP_ERR_NO_MEM; }
+
+    test_cfg_t nt;
+    memset(&nt, 0, sizeof(nt));
+    nt.id     = max_id + 1;
+    nt.active = 1;
+    strlcpy(nt.name, name, sizeof(nt.name));
+
+    f = fopen(TEST_PATH, "ab");
+    if (!f) { UNLOCK(); return ESP_ERR_NO_MEM; }
+    size_t n = fwrite(&nt, sizeof(test_cfg_t), 1, f);
+    fclose(f);
+
+    if (n == 1) {
+        if (out_id) *out_id = nt.id;
+        ESP_LOGI(TAG, "Added test %d \"%s\"", nt.id, nt.name);
+        UNLOCK();
+        return ESP_OK;
+    }
+    UNLOCK();
+    return ESP_FAIL;
+}
+
+esp_err_t test_delete(uint8_t id)
+{
+    if (id == 0) return ESP_ERR_INVALID_ARG;
+
+    LOCK();
+
+    static test_cfg_t buf[TEST_LIST_MAX];
+    int total = 0;
+    bool found = false;
+
+    FILE *f = fopen(TEST_PATH, "rb");
+    if (f) {
+        test_cfg_t t;
+        while (total < TEST_LIST_MAX && fread(&t, sizeof(test_cfg_t), 1, f) == 1) {
+            if (t.id == id) { t.active = 0; found = true; }
+            buf[total++] = t;
+        }
+        fclose(f);
+    }
+
+    if (!found) { UNLOCK(); return ESP_ERR_NOT_FOUND; }
+
+    f = fopen(TEST_PATH, "wb");
+    if (!f) { UNLOCK(); return ESP_ERR_NO_MEM; }
+    fwrite(buf, sizeof(test_cfg_t), total, f);
+    fclose(f);
+
+    UNLOCK();
+    return ESP_OK;
+}
+
+bool test_get_name(uint8_t id, char *out_name, size_t max_len)
+{
+    if (id == 0 || !out_name) return false;
+
+    LOCK();
+    FILE *f = fopen(TEST_PATH, "rb");
+    if (!f) { UNLOCK(); return false; }
+
+    test_cfg_t t;
+    bool found = false;
+    while (fread(&t, sizeof(test_cfg_t), 1, f) == 1) {
+        if (t.id == id && t.active) {
+            strlcpy(out_name, t.name, max_len);
+            found = true;
+            break;
+        }
+    }
+    fclose(f);
+    UNLOCK();
+    return found;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Utility
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -648,7 +771,7 @@ void session_build_default_name(session_type_t type, char *buf, size_t len)
         case SESSION_TYPE_WEIGHING:    type_str = i18n_t(STR_EVENT_WEIGHING);    break;
         case SESSION_TYPE_VACCINATION: type_str = i18n_t(STR_EVENT_VACCINATION); break;
         case SESSION_TYPE_PREGNANCY:   type_str = i18n_t(STR_EVENT_PREGNANCY);   break;
-        case SESSION_TYPE_TB_TEST:     type_str = i18n_t(STR_EVENT_TB_TEST);     break;
+        case SESSION_TYPE_TEST:        type_str = i18n_t(STR_EVENT_TEST);        break;
         case SESSION_TYPE_REMOVAL:     type_str = i18n_t(STR_EVENT_REMOVAL);     break;
         default:                       type_str = i18n_t(STR_EVENT_GENERAL);     break;
     }

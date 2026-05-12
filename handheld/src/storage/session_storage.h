@@ -13,6 +13,8 @@
 #define SESSION_VAX_MAX     15   // vaccines per session
 #define VACCINE_NAME_MAX    32
 #define VACCINE_LIST_MAX    20
+#define TEST_NAME_MAX       32
+#define TEST_LIST_MAX       20
 
 // ── Session type (replaces the old "event type" concept) ──────────────────────
 typedef enum {
@@ -20,7 +22,7 @@ typedef enum {
     SESSION_TYPE_WEIGHING    = 1,
     SESSION_TYPE_VACCINATION = 2,
     SESSION_TYPE_PREGNANCY   = 3,
-    SESSION_TYPE_TB_TEST     = 4,
+    SESSION_TYPE_TEST        = 4,   // Generic configurable test (Positive/Negative/Inconclusive)
     SESSION_TYPE_REMOVAL     = 5,
     SESSION_TYPE_COUNT
 } session_type_t;
@@ -39,10 +41,10 @@ typedef enum {
 } pregnancy_result_t;
 
 typedef enum {
-    TB_INCONCLUSIVE = 0,
-    TB_POSITIVE     = 1,
-    TB_NEGATIVE     = 2,
-} tb_result_t;
+    TEST_INCONCLUSIVE = 0,
+    TEST_POSITIVE     = 1,
+    TEST_NEGATIVE     = 2,
+} test_result_t;
 
 // ── Session metadata — 256 bytes, stored in the sessions index file ───────────
 // Offset in index file = (id - 1) * sizeof(session_meta_t).
@@ -58,7 +60,8 @@ typedef struct __attribute__((packed)) {
     uint8_t  vax_ids[SESSION_VAX_MAX];  //  15 — vaccine IDs from vaccine config
     uint8_t  synced;                    //   1 — 1 = marked synced by desktop
     char     note[SESSION_NOTE_MAX];    // 128 — free-text session note
-    uint8_t  _pad[33];                  //  33 — reserved for future use
+    uint8_t  test_id;                   //   1 — test config ID (type TEST only; 0=none)
+    uint8_t  _pad[32];                  //  32 — reserved for future use
 } session_meta_t;                       // TOTAL: 256 bytes
 
 // ── Tag scan record — 164 bytes, stored in per-session record files ───────────
@@ -69,7 +72,7 @@ typedef struct __attribute__((packed)) {
 //   Weighing:   data[0..1]   uint16_t weight_kg (little-endian)
 //   Vaccination:data[0]      vax_count, data[1..15] vax_ids (copy from session)
 //   Pregnancy:  data[0]      pregnancy_result_t
-//   TB Test:    data[0]      tb_result_t
+//   Test:       data[0]      test_result_t
 //   Removal:    data[0..3]   time_t removal_date (= scanned_at at first scan)
 typedef struct __attribute__((packed)) {
     char     eid[SESSION_EID_MAX];      // 16 — FDX-B EID (primary key)
@@ -100,10 +103,12 @@ esp_err_t session_storage_init(void);
 
 // Create a new session, auto-naming it "YYYY-MM-DD <type>" if name is NULL.
 // vax_ids / vax_count are only used for SESSION_TYPE_VACCINATION.
+// test_id is only used for SESSION_TYPE_TEST (0 = no test selected).
 // Sets the new session as the active session.
 // Returns the new session ID in *out_id (may be NULL).
 esp_err_t session_create(session_type_t type, const char *name,
                           const uint8_t *vax_ids, uint8_t vax_count,
+                          uint8_t test_id,
                           uint32_t *out_id);
 
 // Set an existing session as the active (current) session.
@@ -170,6 +175,28 @@ esp_err_t vaccine_delete(uint8_t id);
 
 // Resolve a vaccine ID to its name. Returns false if not found or inactive.
 bool      vaccine_get_name(uint8_t id, char *out_name, size_t max_len);
+
+// ── Test configuration (generic configurable test) ────────────────────────────
+
+// Stored same way as vaccines but in a separate file.
+typedef struct __attribute__((packed)) {
+    uint8_t  id;                        //  1 — 1-based; 0 = tombstone
+    char     name[TEST_NAME_MAX];       // 32 — display name
+    uint8_t  active;                    //  1 — 1 = in use, 0 = deleted
+    uint8_t  _pad[2];                   //  2
+} test_cfg_t;                           // TOTAL: 36 bytes
+
+// Load all active (non-deleted) tests. Returns count written.
+int       test_list(test_cfg_t *out, int max_count);
+
+// Add a new test. Assigns the next available ID and writes *out_id.
+esp_err_t test_add(const char *name, uint8_t *out_id);
+
+// Soft-delete a test by ID.
+esp_err_t test_delete(uint8_t id);
+
+// Resolve a test ID to its name. Returns false if not found or inactive.
+bool      test_get_name(uint8_t id, char *out_name, size_t max_len);
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 

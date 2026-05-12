@@ -12,7 +12,7 @@ DB="$(cd "$(dirname "$DB")" && pwd)/$(basename "$DB")"
 # ██   This script wipes every row from every table in pilocows.db:       ██
 # ██     • tags            • animals       • scan_events                  ██
 # ██     • weights         • vaccinations  • pregnancies                  ██
-# ██     • tb_tests        • removals                                     ██
+# ██     • tests        • removals                                     ██
 # ██                                                                      ██
 # ██   The database schema is kept — only data is removed.               ██
 # ██   There is NO undo.  Make a backup first if you need the data.      ██
@@ -42,7 +42,7 @@ echo "  Deleting all data…"
 sqlite3 "$DB" <<'SQL'
 PRAGMA foreign_keys = OFF;
 DELETE FROM removals;
-DELETE FROM tb_tests;
+DELETE FROM tests;
 DELETE FROM pregnancies;
 DELETE FROM vaccinations;
 DELETE FROM weights;

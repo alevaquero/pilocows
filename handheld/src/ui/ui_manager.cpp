@@ -6,6 +6,7 @@
 #include "screen_settings.h"
 #include "screen_wifi.h"
 #include "screen_vaccine_settings.h"
+#include "screen_test_settings.h"
 #include "display/display.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -30,6 +31,7 @@ void ui_manager_init(void)
     CREATE_SCREEN(screen_settings_create);
     CREATE_SCREEN(screen_wifi_create);
     CREATE_SCREEN(screen_vaccine_settings_create);
+    CREATE_SCREEN(screen_test_settings_create);
 
     ui_manager_show(SCREEN_SESSION_MENU);
     ESP_LOGI(TAG, "UI initialized");
@@ -46,6 +48,7 @@ void ui_manager_show(screen_id_t screen)
     case SCREEN_SETTINGS:     screen_settings_load();     break;
     case SCREEN_WIFI:              screen_wifi_load();              break;
     case SCREEN_VACCINE_SETTINGS:  screen_vaccine_settings_load();  break;
+    case SCREEN_TEST_SETTINGS:     screen_test_settings_load();     break;
     default: break;
     }
     s_current = screen;

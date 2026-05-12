@@ -34,7 +34,7 @@ static const struct { const char *en; const char *es; } s_table[] = {
     { "Weighing",                   "Pesaje" },
     { "Vaccination",                "Vacunacion" },
     { "Pregnancy Check",            "Control de prenez" },
-    { "TB Test",                    "Test de tuberculosis" },
+    { "Test",                       "Test" },
     { "Removal",                    "Baja" },
     { "No scans yet",               "Sin escaneos" },
     { "Scan History",               "Historial de escaneos" },
@@ -102,8 +102,7 @@ static const struct { const char *en; const char *es; } s_table[] = {
     { "Medium",                     "Mediana" },
     { "Big",                        "Grande" },
     { "Rejected",                   "Descarte" },
-    // TB Test
-    { "TB Test",                    "Test tuberculosis" },
+    // Test (generic configurable test)
     { "Positive",                   "Positivo" },
     { "Negative",                   "Negativo" },
     { "Inconclusive",               "No concluyente" },
@@ -119,6 +118,12 @@ static const struct { const char *en; const char *es; } s_table[] = {
     { "Vaccine Name",               "Nombre de vacuna" },
     { "No vaccines configured",     "Sin vacunas configuradas" },
     { "Delete this vaccine?",       "Eliminar esta vacuna?" },
+    // Tests settings
+    { "Tests",                      "Tests" },
+    { "Add Test",                   "Agregar test" },
+    { "Test Name",                  "Nombre de test" },
+    { "No tests configured",        "Sin tests configurados" },
+    { "Delete this test?",          "Eliminar este test?" },
     // BLE / Sync
     { "Sync to PC",                  "Sincronizar con PC" },
     { "Synced",                      "Sincronizada" },

@@ -21,7 +21,7 @@ import * as dlog from '../debugLog'
 // ---------------------------------------------------------------------------
 
 const SESSION_TYPE_INT: Record<string, number> = {
-  general: 0, weighing: 1, vaccination: 2, pregnancy: 3, tb_test: 4,
+  general: 0, weighing: 1, vaccination: 2, pregnancy: 3, test: 4,
 }
 
 function bleRecordToIncoming(r: SessionRecord): IncomingSessionRecord {
@@ -32,7 +32,8 @@ function bleRecordToIncoming(r: SessionRecord): IncomingSessionRecord {
     type: SESSION_TYPE_INT[r.event_type] ?? 0,
     weight_kg: r.weight_kg,
     pregnancy: r.pregnancy_result,
-    tb_result: r.tb_result,
+    test_result: r.test_result,
+    test_name: r.test_name,
     vaccines: r.vaccines,
     note: r.notes,
   }
@@ -257,7 +258,7 @@ export default function SyncPage() {
         if (r.weight_kg != null)        parts.push(`weight=${r.weight_kg}kg`)
         if (r.vaccines)                 parts.push(`vaccines="${r.vaccines}"`)
         if (r.pregnancy_result)         parts.push(`preg="${r.pregnancy_result}"`)
-        if (r.tb_result)                parts.push(`tb="${r.tb_result}"`)
+        if (r.test_result)              parts.push(`test="${r.test_result}"${r.test_name ? ` (${r.test_name})` : ''}`)
         if (r.notes)                    parts.push(`notes="${r.notes}"`)
         dlog.dbg(`    [${i + 1}] ${parts.join('  ')}`)
       })
@@ -340,6 +341,14 @@ export default function SyncPage() {
   // ---------------------------------------------------------------------------
   // Register unregistered tag
   // ---------------------------------------------------------------------------
+  const handleRegisterAll = async (sessionId: number) => {
+    const s = sessionSync[sessionId]
+    if (s?.status !== 'done') return
+    const pending = s.unregistered.filter(u => u.reg === 'pending').map(u => u.eid)
+    dlog.log(`Registering all ${pending.length} unregistered tag(s) for session ${sessionId}…`)
+    await Promise.all(pending.map(eid => handleRegisterTag(sessionId, eid)))
+  }
+
   const handleRegisterTag = async (sessionId: number, eid: string) => {
     dlog.log(`Registering tag EID=${eid} (from session ${sessionId})…`)
     setSessionSync(prev => {
@@ -510,6 +519,7 @@ export default function SyncPage() {
                   onSync={() => handleSyncSession(session)}
                   onDelete={() => setDeleteConfirm(session.id)}
                   onRegisterTag={(eid) => handleRegisterTag(session.id, eid)}
+                  onRegisterAll={() => handleRegisterAll(session.id)}
                   t={t}
                 />
               )
@@ -554,10 +564,11 @@ interface SessionCardProps {
   onSync: () => void
   onDelete: () => void
   onRegisterTag: (eid: string) => void
+  onRegisterAll: () => void
   t: (key: string) => string
 }
 
-function SessionCard({ session, syncState, onSync, onDelete, onRegisterTag, t }: SessionCardProps) {
+function SessionCard({ session, syncState, onSync, onDelete, onRegisterTag, onRegisterAll, t }: SessionCardProps) {
   const isSyncing = syncState.status === 'syncing'
   const isDone    = syncState.status === 'done'
   const isError   = syncState.status === 'error'
@@ -631,8 +642,22 @@ function SessionCard({ session, syncState, onSync, onDelete, onRegisterTag, t }:
                 <> · <span className="font-semibold text-amber-600">{s.unregistered.length}</span> {t('sync.unregistered')}</>
               )}
             </p>
-            {s.unregistered.length > 0 && (
+            {s.unregistered.length > 0 && (() => {
+              const pendingCount = s.unregistered.filter(u => u.reg === 'pending').length
+              const anyRegistering = s.unregistered.some(u => u.reg === 'registering')
+              return (
               <div className="space-y-1">
+                {pendingCount >= 2 && (
+                  <div className="flex justify-end mb-1">
+                    <button
+                      onClick={onRegisterAll}
+                      disabled={anyRegistering}
+                      className="text-xs px-2 py-1 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                    >
+                      {t('sync.register_all')}
+                    </button>
+                  </div>
+                )}
                 {s.unregistered.map(u => (
                   <div key={u.eid} className="flex items-center justify-between">
                     <span className="font-mono text-xs text-slate-700">{u.eid}</span>
@@ -656,7 +681,8 @@ function SessionCard({ session, syncState, onSync, onDelete, onRegisterTag, t }:
                   </div>
                 ))}
               </div>
-            )}
+              )
+            })()}
           </div>
         )
       })()}

@@ -38,7 +38,7 @@ fn session_type_str(t: u8) -> &'static str {
         1 => "weighing",
         2 => "vaccination",
         3 => "pregnancy",
-        4 => "tb_test",
+        4 => "test",
         5 => "removal",
         _ => "general",
     }
@@ -93,7 +93,9 @@ pub struct SessionRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pregnancy_result: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tb_result: Option<String>,
+    pub test_result: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub test_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vaccines: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -276,7 +278,8 @@ pub async fn read_session_data(
         weight_kg: Option<serde_json::Value>,
         vaccines: Option<String>,
         pregnancy: Option<String>,
-        tb_result: Option<String>,
+        test_result: Option<String>,
+        test_name: Option<String>,
         #[serde(default)]
         note: String,
     }
@@ -329,7 +332,8 @@ pub async fn read_session_data(
             session_id,
             weight_kg: r.weight_kg.and_then(|v| v.as_f64()),
             pregnancy_result: r.pregnancy,
-            tb_result: r.tb_result,
+            test_result: r.test_result,
+            test_name: r.test_name,
             vaccines: r.vaccines,
             notes: if r.note.is_empty() { None } else { Some(r.note) },
         }));

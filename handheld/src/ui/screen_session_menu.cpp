@@ -41,7 +41,7 @@ static const char *type_en_str(uint8_t type)
         case SESSION_TYPE_WEIGHING:    return "Weighing";
         case SESSION_TYPE_VACCINATION: return "Vaccination";
         case SESSION_TYPE_PREGNANCY:   return "Pregnancy Check";
-        case SESSION_TYPE_TB_TEST:     return "TB Test";
+        case SESSION_TYPE_TEST:        return "Test";
         case SESSION_TYPE_REMOVAL:     return "Removal";
         default:                       return "General";
     }
@@ -216,7 +216,8 @@ void screen_session_menu_create(void)
     lv_obj_set_pos(btn_settings, 8, 260);
     lv_obj_set_style_radius(btn_settings, 6, LV_PART_MAIN);
     lv_obj_set_style_bg_color(btn_settings, lv_color_hex(0x607D8B), LV_PART_MAIN);
-    lv_obj_set_ext_click_area(btn_settings, 10);
+    // ext_click_area=20: hit zone bottom = 312+20=332 → well past screen edge (320). ✓
+    lv_obj_set_ext_click_area(btn_settings, 20);
     lv_obj_add_event_cb(btn_settings, on_settings, LV_EVENT_CLICKED, NULL);
     s_lbl_btn_settings = lv_label_create(btn_settings);
     lv_label_set_text_fmt(s_lbl_btn_settings, "%s  %s", LV_SYMBOL_SETTINGS, i18n_t(STR_SETTINGS_TITLE));

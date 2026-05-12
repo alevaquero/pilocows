@@ -57,17 +57,18 @@ CREATE TABLE IF NOT EXISTS pregnancies (
 
 CREATE INDEX IF NOT EXISTS idx_pregnancies_animal_id ON pregnancies(animal_id);
 
--- ─── TB Tests ─────────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS tb_tests (
+-- ─── Tests ────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS tests (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     animal_id   INTEGER NOT NULL REFERENCES animals(id) ON DELETE CASCADE,
-    result      TEXT    NOT NULL,            -- positive | negative | inconclusive
-    tested_at   TEXT    NOT NULL,            -- ISO-8601 date
+    test_name   TEXT    NOT NULL DEFAULT '',  -- e.g. "Brucella", "Tuberculosis"
+    result      TEXT    NOT NULL,             -- positive | negative | inconclusive
+    tested_at   TEXT    NOT NULL,             -- ISO-8601 date
     notes       TEXT    NOT NULL DEFAULT '',
     created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_tb_tests_animal_id ON tb_tests(animal_id);
+CREATE INDEX IF NOT EXISTS idx_tests_animal_id ON tests(animal_id);
 
 -- ─── Weights ──────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS weights (
@@ -96,11 +97,12 @@ CREATE TABLE IF NOT EXISTS removals (
 CREATE TABLE IF NOT EXISTS scan_events (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     eid             TEXT    NOT NULL,        -- 11-digit EID as received from handheld
-    event_type      TEXT    NOT NULL,        -- weighing | vaccination | pregnancy | tb_test | removal | general
+    event_type      TEXT    NOT NULL,        -- weighing | vaccination | pregnancy | test | removal | general
     scanned_at      TEXT    NOT NULL,        -- ISO-8601 datetime from handheld RTC
     weight_kg       REAL,
     pregnancy_result TEXT,
-    tb_result       TEXT,
+    test_result     TEXT,
+    test_name       TEXT,
     vaccines        TEXT    NOT NULL DEFAULT '',  -- comma-separated vaccine names
     notes           TEXT    NOT NULL DEFAULT '',
     synced_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
