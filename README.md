@@ -301,14 +301,28 @@ make release-backend
 #    → GitHub Actions builds all platforms and publishes the release
 ```
 
-You can bump multiple sub-projects in the same commit if they ship together:
+You can bump multiple sub-projects in the same commit if they ship together.
+Set the version once as a shell variable so you only type it once:
 
 ```bash
-make bump-backend  V=0.2.0
-make bump-frontend V=0.2.0
+V=0.2.0
+make bump-backend  V=$V
+make bump-frontend V=$V
 git add backend/Cargo.toml frontend/package.json frontend/src-tauri/tauri.conf.json
-git commit -m "Bump backend and frontend to 0.2.0"
+git commit -m "Bump backend and frontend to $V"
 git push
 make release-backend
 make release-frontend
+```
+
+Or use `bump-all` to bump all three sub-projects in one shot:
+
+```bash
+make bump-all V=0.2.0
+git add backend/Cargo.toml frontend/package.json frontend/src-tauri/tauri.conf.json handheld/VERSION
+git commit -m "Bump all to 0.2.0"
+git push
+make release-backend
+make release-frontend
+make release-handheld
 ```

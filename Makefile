@@ -19,6 +19,7 @@
 #     make bump-handheld  V=1.1.0  update handheld/VERSION
 #     make bump-backend   V=1.1.0  update backend/Cargo.toml
 #     make bump-frontend  V=1.1.0  update frontend/package.json + tauri.conf.json
+#     make bump-all       V=1.1.0  bump all three sub-projects
 #
 #   Info:
 #     make versions                print current versions
@@ -44,7 +45,7 @@ BACKEND_BIN         := backend/target/release/pilocows-backend
 
 .PHONY: build-handheld build-backend build-frontend build-all flash
 .PHONY: release-handheld release-backend release-frontend
-.PHONY: bump-handheld bump-backend bump-frontend
+.PHONY: bump-handheld bump-backend bump-frontend bump-all
 .PHONY: versions help
 
 # =============================================================================
@@ -140,6 +141,9 @@ p['version'] = '$(V)'; \
 open(f, 'w').write(json.dumps(p, indent=2) + '\n')"
 	@echo "frontend → $(V)"
 
+bump-all: bump-handheld bump-backend bump-frontend
+	@echo "All sub-projects bumped to $(V)"
+
 # =============================================================================
 # Info
 # =============================================================================
@@ -164,9 +168,10 @@ help:
 	@echo "  make release-frontend        push tag → GHA builds macOS .dmg + Windows .msi"
 	@echo ""
 	@echo "Bump version:"
-	@echo "  make bump-handheld  V=1.1.0"
-	@echo "  make bump-backend   V=1.1.0"
-	@echo "  make bump-frontend  V=1.1.0"
+	@echo "  make bump-handheld  V=1.1.0  (handheld only)"
+	@echo "  make bump-backend   V=1.1.0  (backend only)"
+	@echo "  make bump-frontend  V=1.1.0  (frontend only)"
+	@echo "  make bump-all       V=1.1.0  (all three)"
 	@echo ""
 	@$(MAKE) -s versions
 	@echo ""
