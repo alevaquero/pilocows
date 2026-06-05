@@ -12,8 +12,13 @@
     "tag_number": "Numero de caravana (EID)",
     "purchased_at": "Fecha de compra",
     "notes": "Notas",
-    "unassigned_only": "Solo sin asignar",
-    "no_tags": "No hay caravanas registradas."
+    "status": "Estado",
+    "available_only": "Solo disponibles",
+    "no_tags": "No hay caravanas registradas.",
+    "status_available": "Disponible",
+    "status_active": "En Rodeo",
+    "status_sold": "Vendida",
+    "status_retired": "Retirada"
   },
   "animals": {
     "title": "Animales",

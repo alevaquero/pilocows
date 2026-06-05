@@ -12,6 +12,19 @@ pub struct Tag {
     pub created_at: String,
 }
 
+/// Tag enriched with its assignment status — returned by the list endpoint.
+/// animal_status: "available" | "active" | "sold" | "retired"
+#[derive(Debug, Serialize, FromRow)]
+pub struct TagWithStatus {
+    pub id: i64,
+    pub tag_number: String,
+    pub purchased_at: String,
+    pub notes: String,
+    pub created_at: String,
+    pub animal_status: String,
+    pub animal_id: Option<i64>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateTag {
     pub tag_number: String,

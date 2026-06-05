@@ -7,26 +7,48 @@ use sqlx::SqlitePool;
 
 use crate::{
     error::{AppError, Result},
-    models::{CreateTag, Tag, TagQuery},
+    models::{CreateTag, Tag, TagQuery, TagWithStatus},
 };
 
 pub async fn list_tags(
     State(pool): State<SqlitePool>,
     Query(q): Query<TagQuery>,
-) -> Result<Json<Vec<Tag>>> {
+) -> Result<Json<Vec<TagWithStatus>>> {
     let tags = if q.unassigned == Some(true) {
-        sqlx::query_as::<_, Tag>(
-            "SELECT t.* FROM tags t
-             LEFT JOIN animals a ON a.tag_id = t.id AND a.is_active = 1
-             WHERE a.id IS NULL
+        sqlx::query_as::<_, TagWithStatus>(
+            "SELECT t.id, t.tag_number, t.purchased_at, t.notes, t.created_at,
+                    'available' AS animal_status,
+                    NULL AS animal_id
+             FROM tags t
+             WHERE NOT EXISTS (SELECT 1 FROM animals WHERE tag_id = t.id)
              ORDER BY t.tag_number",
         )
         .fetch_all(&pool)
         .await?
     } else {
-        sqlx::query_as::<_, Tag>("SELECT * FROM tags ORDER BY tag_number")
-            .fetch_all(&pool)
-            .await?
+        sqlx::query_as::<_, TagWithStatus>(
+            "SELECT t.id, t.tag_number, t.purchased_at, t.notes, t.created_at,
+                    CASE
+                        WHEN EXISTS (
+                            SELECT 1 FROM animals WHERE tag_id = t.id AND is_active = 1
+                        ) THEN 'active'
+                        WHEN EXISTS (
+                            SELECT 1 FROM animals a
+                            JOIN removals r ON r.animal_id = a.id AND r.reason = 'sold'
+                            WHERE a.tag_id = t.id
+                        ) THEN 'sold'
+                        WHEN EXISTS (
+                            SELECT 1 FROM animals WHERE tag_id = t.id
+                        ) THEN 'retired'
+                        ELSE 'available'
+                    END AS animal_status,
+                    (SELECT a.id FROM animals a
+                     WHERE a.tag_id = t.id AND a.is_active = 1 LIMIT 1) AS animal_id
+             FROM tags t
+             ORDER BY t.tag_number",
+        )
+        .fetch_all(&pool)
+        .await?
     };
     Ok(Json(tags))
 }

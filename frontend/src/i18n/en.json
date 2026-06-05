@@ -12,8 +12,13 @@
     "tag_number": "Tag Number (EID)",
     "purchased_at": "Purchase Date",
     "notes": "Notes",
-    "unassigned_only": "Unassigned only",
-    "no_tags": "No tags registered yet."
+    "status": "Status",
+    "available_only": "Available only",
+    "no_tags": "No tags registered yet.",
+    "status_available": "Available",
+    "status_active": "In Herd",
+    "status_sold": "Sold",
+    "status_retired": "Retired"
   },
   "animals": {
     "title": "Animals",

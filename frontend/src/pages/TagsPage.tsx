@@ -1,7 +1,24 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { tagsApi, type Tag } from '../api/tags'
+import { tagsApi, type Tag, type TagStatus } from '../api/tags'
 import Modal, { Field, inputCls } from '../components/Modal'
+
+const STATUS_CFG: Record<TagStatus, { labelKey: string; cls: string }> = {
+  available: { labelKey: 'tags.status_available', cls: 'bg-green-100 text-green-700' },
+  active:    { labelKey: 'tags.status_active',    cls: 'bg-blue-100 text-blue-700'  },
+  sold:      { labelKey: 'tags.status_sold',      cls: 'bg-amber-100 text-amber-700' },
+  retired:   { labelKey: 'tags.status_retired',   cls: 'bg-slate-100 text-slate-600' },
+}
+
+function StatusBadge({ status }: { status?: TagStatus }) {
+  const { t } = useTranslation()
+  const cfg = STATUS_CFG[status ?? 'available']
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${cfg.cls}`}>
+      {t(cfg.labelKey)}
+    </span>
+  )
+}
 
 function AddTagModal({ onClose, onCreated }: { onClose: () => void; onCreated: (t: Tag) => void }) {
   const { t } = useTranslation()
@@ -61,14 +78,14 @@ function AddTagModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
 export default function TagsPage() {
   const { t } = useTranslation()
   const [tags, setTags] = useState<Tag[]>([])
-  const [unassignedOnly, setUnassignedOnly] = useState(false)
+  const [availableOnly, setAvailableOnly] = useState(false)
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
-    tagsApi.list(unassignedOnly).then(setTags).finally(() => setLoading(false))
-  }, [unassignedOnly])
+    tagsApi.list(availableOnly).then(setTags).finally(() => setLoading(false))
+  }, [availableOnly])
 
   useEffect(() => { load() }, [load])
 
@@ -81,11 +98,11 @@ export default function TagsPage() {
           <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
             <input
               type="checkbox"
-              checked={unassignedOnly}
-              onChange={e => setUnassignedOnly(e.target.checked)}
+              checked={availableOnly}
+              onChange={e => setAvailableOnly(e.target.checked)}
               className="rounded"
             />
-            {t('tags.unassigned_only')}
+            {t('tags.available_only')}
           </label>
           <button
             onClick={() => setShowAdd(true)}
@@ -107,6 +124,7 @@ export default function TagsPage() {
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">EID</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('tags.status')}</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('tags.purchased_at')}</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('tags.notes')}</th>
               </tr>
@@ -115,6 +133,7 @@ export default function TagsPage() {
               {tags.map(tag => (
                 <tr key={tag.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
                   <td className="px-4 py-3 font-mono text-slate-800">{tag.tag_number}</td>
+                  <td className="px-4 py-3"><StatusBadge status={tag.animal_status} /></td>
                   <td className="px-4 py-3 text-slate-600">{tag.purchased_at}</td>
                   <td className="px-4 py-3 text-slate-500">{tag.notes}</td>
                 </tr>
