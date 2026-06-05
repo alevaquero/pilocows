@@ -7,6 +7,7 @@ import AnimalDetailPage from './pages/AnimalDetailPage'
 import SessionsPage from './pages/SessionsPage'
 import SessionDetailPage from './pages/SessionDetailPage'
 import SyncPage from './pages/SyncPage'
+import SettingsPage from './pages/SettingsPage'
 import SplashScreen from './components/SplashScreen'
 
 export default function App() {
@@ -25,6 +26,7 @@ export default function App() {
             <Route path="sessions" element={<SessionsPage />} />
             <Route path="sessions/:id" element={<SessionDetailPage />} />
             <Route path="sync" element={<SyncPage />} />
+            <Route path="settings" element={<SettingsPage />} />
           </Route>
         </Routes>
       </HashRouter>

@@ -3,7 +3,10 @@ mod error;
 mod models;
 mod routes;
 
-use std::net::SocketAddr;
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use sqlx::migrate::MigrateDatabase;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -29,6 +32,34 @@ async fn main() -> anyhow::Result<()> {
         .and_then(|p| p.parse().ok())
         .unwrap_or(8742);
 
+    // Resolve the database file path (absolute)
+    let db_file_str = database_url.trim_start_matches("sqlite://");
+    let db_path: PathBuf = {
+        let p = PathBuf::from(db_file_str);
+        if p.is_absolute() {
+            p
+        } else {
+            std::env::current_dir()?.join(p)
+        }
+    };
+
+    // Apply any pending restore before opening the pool
+    let pending_path = db_path.with_file_name("pilocows_pending.db");
+    if pending_path.exists() {
+        tracing::info!("Pending restore found — applying...");
+        let wal = PathBuf::from(format!("{}-wal", db_path.display()));
+        let shm = PathBuf::from(format!("{}-shm", db_path.display()));
+        let _ = std::fs::remove_file(&wal);
+        let _ = std::fs::remove_file(&shm);
+        if db_path.exists() {
+            let pre_restore = db_path.with_file_name("pilocows_pre_restore.db");
+            std::fs::rename(&db_path, &pre_restore)?;
+            tracing::info!("Previous DB saved as pilocows_pre_restore.db");
+        }
+        std::fs::rename(&pending_path, &db_path)?;
+        tracing::info!("Restore applied successfully");
+    }
+
     // Ensure the SQLite file exists before connecting
     if !sqlx::Sqlite::database_exists(&database_url).await? {
         tracing::info!("Creating database at {database_url}");
@@ -43,16 +74,32 @@ async fn main() -> anyhow::Result<()> {
     sqlx::migrate!("./migrations").run(&pool).await?;
     tracing::info!("Migrations complete");
 
-    // Build router
-    let app = routes::router(pool).layer(
-        tower_http::cors::CorsLayer::permissive(),
-    );
+    // Shutdown channel — used by the restore endpoint to trigger graceful exit
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+    let shutdown_tx: routes::backup::ShutdownTx = Arc::new(Mutex::new(Some(shutdown_tx)));
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    // Build router
+    let app = routes::router(pool)
+        .layer(axum::Extension(Arc::new(db_path)))
+        .layer(axum::Extension(shutdown_tx))
+        .layer(tower_http::cors::CorsLayer::permissive());
+
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     tracing::info!("Listening on http://{addr}");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {
+                    tracing::info!("Received Ctrl+C, shutting down");
+                }
+                _ = shutdown_rx => {
+                    tracing::info!("Restore staged, shutting down for restart");
+                }
+            }
+        })
+        .await?;
 
     Ok(())
 }

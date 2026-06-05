@@ -3,7 +3,8 @@
     "animals": "Animales",
     "tags": "Caravanas",
     "sessions": "Sesiones",
-    "sync": "Sincronizar"
+    "sync": "Sincronizar",
+    "settings": "Configuración"
   },
   "tags": {
     "title": "Caravanas",
@@ -156,6 +157,23 @@
     "registered": "Registrado",
     "register_animal": "Registrar",
     "saved": "Guardado"
+  },
+  "settings": {
+    "title": "Configuración",
+    "language": "Idioma",
+    "language_desc": "Elegí el idioma de la aplicación.",
+    "backup": "Copia de seguridad",
+    "backup_desc": "Descargá una copia completa de la base de datos a tu computadora.",
+    "backup_btn": "Descargar copia",
+    "backup_saved": "Guardado en",
+    "restore": "Restaurar",
+    "restore_desc": "Reemplazá la base de datos actual con un archivo de copia de seguridad.",
+    "restore_warning": "Esto sobreescribirá todos los datos actuales y reiniciará el sistema. Asegurate de tener una copia reciente antes de continuar.",
+    "restore_btn": "Restaurar base de datos",
+    "restore_confirm": "Esto sobreescribirá todos los datos actuales y reiniciará el sistema. ¿Estás seguro?",
+    "restore_confirm_inline": "Se sobreescribirán todos los datos. ¿Seguro?",
+    "restore_success": "Restauración en proceso. El sistema está reiniciando — esperá un momento antes de continuar.",
+    "restore_pick": "Elegí un archivo .db…"
   },
   "common": {
     "save": "Guardar",

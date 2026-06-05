@@ -1,7 +1,25 @@
 use crate::ble::{self, DeviceInfo, HeldSession, SessionMeta, SessionRecord};
 use crate::AppState;
-use tauri::State;
+use tauri::{Manager, State};
 use tokio::time::{timeout, Duration};
+
+// ---------------------------------------------------------------------------
+// File save (backup download)
+// ---------------------------------------------------------------------------
+
+/// Save raw bytes to the user's Downloads folder.
+/// Returns the absolute path where the file was written.
+#[tauri::command]
+pub async fn save_backup(
+    app: tauri::AppHandle,
+    filename: String,
+    data: Vec<u8>,
+) -> Result<String, String> {
+    let download_dir = app.path().download_dir().map_err(|e| e.to_string())?;
+    let save_path = download_dir.join(&filename);
+    std::fs::write(&save_path, &data).map_err(|e| e.to_string())?;
+    Ok(save_path.to_string_lossy().to_string())
+}
 
 // ---------------------------------------------------------------------------
 // BLE scan

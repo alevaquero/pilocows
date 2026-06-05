@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import i18n from '../i18n/index'
 import DebugLogPanel from './DebugLogPanel'
 
 function NavItem({ to, label }: { to: string; label: string }) {
@@ -18,25 +17,6 @@ function NavItem({ to, label }: { to: string; label: string }) {
     >
       {label}
     </NavLink>
-  )
-}
-
-function LanguageToggle() {
-  const lang = i18n.language.startsWith('es') ? 'es' : 'en'
-  const toggle = () => {
-    const next = lang === 'es' ? 'en' : 'es'
-    i18n.changeLanguage(next)
-    localStorage.setItem('lang', next)
-  }
-  return (
-    <button
-      onClick={toggle}
-      className="flex items-center gap-2 px-4 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 text-sm transition-colors"
-    >
-      <span className="font-semibold">{lang.toUpperCase()}</span>
-      <span className="text-slate-500">→</span>
-      <span>{lang === 'es' ? 'EN' : 'ES'}</span>
-    </button>
   )
 }
 
@@ -58,6 +38,7 @@ export default function Layout() {
           <NavItem to="/tags" label={t('nav.tags')} />
           <NavItem to="/sessions" label={t('nav.sessions')} />
           <NavItem to="/sync" label={t('nav.sync')} />
+          <NavItem to="/settings" label={t('nav.settings')} />
         </nav>
 
         {/* View section */}
@@ -75,9 +56,6 @@ export default function Layout() {
           </button>
         </div>
 
-        <div className="px-3 py-4 border-t border-slate-700">
-          <LanguageToggle />
-        </div>
       </aside>
 
       {/* Right column: main content + debug panel stacked */}

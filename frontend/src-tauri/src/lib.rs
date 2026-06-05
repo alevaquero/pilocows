@@ -44,6 +44,7 @@ pub fn run() {
             commands::ble_delete_session,
             commands::ble_disconnect,
             commands::ble_check_connection,
+            commands::save_backup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

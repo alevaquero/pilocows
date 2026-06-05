@@ -1,4 +1,5 @@
 pub mod animals;
+pub mod backup;
 pub mod health;
 pub mod removal;
 pub mod sessions;
@@ -87,6 +88,11 @@ pub fn router(pool: SqlitePool) -> Router {
             get(sessions::get_session)
                 .patch(sessions::patch_session)
                 .delete(sessions::delete_session),
+        )
+        // Backup / Restore
+        .route(
+            "/api/v1/backup",
+            get(backup::backup).post(backup::restore),
         )
         .with_state(pool)
 }

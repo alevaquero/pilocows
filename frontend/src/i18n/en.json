@@ -3,7 +3,8 @@
     "animals": "Animals",
     "tags": "Tags",
     "sessions": "Sessions",
-    "sync": "Sync"
+    "sync": "Sync",
+    "settings": "Settings"
   },
   "tags": {
     "title": "Tag Inventory",
@@ -156,6 +157,23 @@
     "registered": "Registered",
     "register_animal": "Register",
     "saved": "Saved"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "language_desc": "Choose the display language for the application.",
+    "backup": "Backup",
+    "backup_desc": "Download a complete copy of the database to your computer.",
+    "backup_btn": "Download Backup",
+    "backup_saved": "Saved to",
+    "restore": "Restore",
+    "restore_desc": "Replace the current database with a backup file.",
+    "restore_warning": "This will overwrite all current data and restart the backend. Make sure you have a recent backup before proceeding.",
+    "restore_btn": "Restore Database",
+    "restore_confirm": "This will overwrite all current data and restart the backend. Are you sure?",
+    "restore_confirm_inline": "This will overwrite all data. Sure?",
+    "restore_success": "Restore staged. The backend is restarting — wait a moment before continuing.",
+    "restore_pick": "Choose a .db file…"
   },
   "common": {
     "save": "Save",
