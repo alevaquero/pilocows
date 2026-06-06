@@ -2,6 +2,24 @@
 
 Animal traceability system for Pilo's farm. Tracks cattle via ISO 11784/85 RFID ear tags (FDX-B, 134.2 kHz, 11-digit EID).
 
+---
+
+## Gallery
+
+| Handheld PCB | 3D-printed enclosure |
+|:---:|:---:|
+| ![Handheld board unassembled](docs/media/board.png) | ![3D-printed enclosure](docs/media/handheld.png) |
+
+**Desktop app**
+
+![Frontend screenshot](docs/media/frontend.png)
+
+**Demo — scanning tags**
+
+<video src="docs/media/demo.mp4" autoplay loop muted playsinline style="max-width: 100%;"></video>
+
+---
+
 ## Architecture
 
 ```
