@@ -44,9 +44,28 @@ jobs:
         with:
           workspaces: frontend/src-tauri
 
+      # Cache backend Rust deps separately — only needed on Windows where
+      # the backend is compiled and bundled as a sidecar.
+      - uses: Swatinem/rust-cache@v2
+        if: matrix.os == 'windows-latest'
+        with:
+          workspaces: backend
+          key: backend-${{ matrix.rust_targets }}
+
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
+
+      # Build the backend and stage it where Tauri expects the sidecar binary.
+      - name: Build backend sidecar
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          cargo build --release
+          mkdir -p ../frontend/src-tauri/binaries
+          cp target/release/pilocows-backend.exe \
+             ../frontend/src-tauri/binaries/pilocows-backend-${{ matrix.rust_targets }}.exe
+        working-directory: backend
 
       - name: Build and publish Tauri app
         uses: tauri-apps/tauri-action@v0
