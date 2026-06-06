@@ -16,7 +16,10 @@ Animal traceability system for Pilo's farm. Tracks cattle via ISO 11784/85 RFID 
 
 **Demo — scanning tags**
 
-<video src="docs/media/demo.mp4" autoplay loop muted playsinline style="max-width: 100%;"></video>
+<video autoplay loop muted playsinline width="100%">
+  <source src="docs/media/demo.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
 
 ---
 
