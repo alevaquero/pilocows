@@ -11,7 +11,6 @@ pub enum AppError {
     #[error("not found")]
     NotFound,
 
-    #[allow(dead_code)]
     #[error("conflict: {0}")]
     Conflict(String),
 

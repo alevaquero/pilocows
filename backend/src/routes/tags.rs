@@ -65,6 +65,34 @@ pub async fn get_tag_by_number(
     Ok(Json(tag))
 }
 
+pub async fn delete_tag(
+    State(pool): State<SqlitePool>,
+    Path(tag_number): Path<String>,
+) -> Result<StatusCode> {
+    let tag = sqlx::query_as::<_, Tag>("SELECT * FROM tags WHERE tag_number = ?")
+        .bind(&tag_number)
+        .fetch_optional(&pool)
+        .await?
+        .ok_or(AppError::NotFound)?;
+
+    let has_animal: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM animals WHERE tag_id = ?)")
+            .bind(tag.id)
+            .fetch_one(&pool)
+            .await?;
+    if has_animal {
+        return Err(AppError::Conflict(
+            "Tag is assigned to an animal — delete the animal first".into(),
+        ));
+    }
+
+    sqlx::query("DELETE FROM tags WHERE id = ?")
+        .bind(tag.id)
+        .execute(&pool)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn create_tag(
     State(pool): State<SqlitePool>,
     Json(body): Json<CreateTag>,

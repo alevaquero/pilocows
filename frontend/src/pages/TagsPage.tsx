@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { tagsApi, type Tag, type TagStatus } from '../api/tags'
+import { ApiError } from '../api/client'
 import Modal, { Field, inputCls } from '../components/Modal'
 
 const STATUS_CFG: Record<TagStatus, { labelKey: string; cls: string }> = {
@@ -75,12 +76,16 @@ function AddTagModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
   )
 }
 
+type DeleteState = { tagNumber: string; error?: string } | null
+
 export default function TagsPage() {
   const { t } = useTranslation()
   const [tags, setTags] = useState<Tag[]>([])
   const [availableOnly, setAvailableOnly] = useState(false)
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
+  const [deleteState, setDeleteState] = useState<DeleteState>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -88,6 +93,22 @@ export default function TagsPage() {
   }, [availableOnly])
 
   useEffect(() => { load() }, [load])
+
+  const handleDelete = async (tagNumber: string) => {
+    setDeleting(true)
+    try {
+      await tagsApi.delete(tagNumber)
+      setTags(prev => prev.filter(t => t.tag_number !== tagNumber))
+      setDeleteState(null)
+    } catch (e) {
+      const msg = e instanceof ApiError && e.status === 409
+        ? t('tags.delete_blocked')
+        : String(e)
+      setDeleteState({ tagNumber, error: msg })
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <div className="p-8">
@@ -127,17 +148,62 @@ export default function TagsPage() {
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('tags.status')}</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('tags.purchased_at')}</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('tags.notes')}</th>
+                <th />
               </tr>
             </thead>
             <tbody>
-              {tags.map(tag => (
-                <tr key={tag.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                  <td className="px-4 py-3 font-mono text-slate-800">{tag.tag_number}</td>
-                  <td className="px-4 py-3"><StatusBadge status={tag.animal_status} /></td>
-                  <td className="px-4 py-3 text-slate-600">{tag.purchased_at}</td>
-                  <td className="px-4 py-3 text-slate-500">{tag.notes}</td>
-                </tr>
-              ))}
+              {tags.map(tag => {
+                const isConfirming = deleteState?.tagNumber === tag.tag_number
+                return (
+                  <tr key={tag.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
+                    <td className="px-4 py-3 font-mono text-slate-800">{tag.tag_number}</td>
+                    <td className="px-4 py-3"><StatusBadge status={tag.animal_status} /></td>
+                    <td className="px-4 py-3 text-slate-600">{tag.purchased_at}</td>
+                    <td className="px-4 py-3 text-slate-500">{tag.notes}</td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      {isConfirming ? (
+                        <div className="flex items-center justify-end gap-2">
+                          {deleteState.error ? (
+                            <>
+                              <span className="text-xs text-red-600">{deleteState.error}</span>
+                              <button
+                                onClick={() => setDeleteState(null)}
+                                className="text-xs text-slate-500 hover:text-slate-700"
+                              >
+                                {t('common.cancel')}
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => setDeleteState(null)}
+                                className="text-xs text-slate-500 hover:text-slate-700"
+                              >
+                                {t('common.cancel')}
+                              </button>
+                              <button
+                                onClick={() => handleDelete(tag.tag_number)}
+                                disabled={deleting}
+                                className="text-xs text-red-600 hover:text-red-800 border border-red-200 rounded px-2 py-0.5 disabled:opacity-50"
+                              >
+                                {deleting ? t('common.loading') : t('tags.delete')}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setDeleteState({ tagNumber: tag.tag_number })}
+                          className="text-xs text-slate-300 hover:text-red-400"
+                          title={t('tags.delete')}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

@@ -25,4 +25,6 @@ export const tagsApi = {
     api.get<Tag>(`/tags/${tag_number}`),
   create: (payload: CreateTagPayload) =>
     api.post<Tag>('/tags', payload),
+  delete: (tag_number: string) =>
+    api.delete<void>(`/tags/${tag_number}`),
 }

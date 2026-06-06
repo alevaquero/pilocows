@@ -7,7 +7,7 @@ pub mod sync;
 pub mod tags;
 
 use axum::{
-    routing::{get, patch, post},
+    routing::{delete, get, patch, post},
     Router,
 };
 use sqlx::SqlitePool;
@@ -16,7 +16,10 @@ pub fn router(pool: SqlitePool) -> Router {
     Router::new()
         // Tags
         .route("/api/v1/tags", get(tags::list_tags).post(tags::create_tag))
-        .route("/api/v1/tags/:tag_number", get(tags::get_tag_by_number))
+        .route(
+            "/api/v1/tags/:tag_number",
+            get(tags::get_tag_by_number).delete(tags::delete_tag),
+        )
         // Animals
         .route(
             "/api/v1/animals",
@@ -24,7 +27,9 @@ pub fn router(pool: SqlitePool) -> Router {
         )
         .route(
             "/api/v1/animals/:id",
-            get(animals::get_animal).patch(animals::patch_animal),
+            get(animals::get_animal)
+                .patch(animals::patch_animal)
+                .delete(animals::delete_animal),
         )
         // Vaccinations
         .route(

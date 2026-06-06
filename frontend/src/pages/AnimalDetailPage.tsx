@@ -24,6 +24,7 @@ type ModalState =
   | { kind: 'edit_removal' }
   | { kind: 'restore' }
   | { kind: 'delete'; recordType: Tab; id: number }
+  | { kind: 'delete_animal' }
 
 const TAB_TO_KIND: Record<Tab, 'vaccination' | 'pregnancy' | 'test' | 'weight'> = {
   vaccinations: 'vaccination',
@@ -423,6 +424,34 @@ function RestoreModal({ animalId, onClose, onDone }: {
   )
 }
 
+// ── Delete animal modal ───────────────────────────────────────────────────────
+
+function DeleteAnimalModal({ animalId, onClose, onDeleted }: {
+  animalId: number; onClose: () => void; onDeleted: () => void
+}) {
+  const { t } = useTranslation()
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const submit = async () => {
+    setSaving(true)
+    try { await animalsApi.delete(animalId); onDeleted() }
+    catch (e) { setError(String(e)); setSaving(false) }
+  }
+
+  return (
+    <Modal title={t('animals.delete_animal_title')} onClose={onClose} footer={
+      <div className="flex gap-2 justify-end w-full">
+        <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50">{t('common.cancel')}</button>
+        <button onClick={submit} disabled={saving} className="px-4 py-2 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50">{saving ? t('common.loading') : t('animals.delete_animal')}</button>
+      </div>
+    }>
+      {error && <p className="mb-3 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
+      <p className="text-sm text-slate-600">{t('animals.delete_animal_body')}</p>
+    </Modal>
+  )
+}
+
 // ── Delete confirm modal ──────────────────────────────────────────────────────
 
 function DeleteConfirmModal({ onConfirm, onClose }: {
@@ -549,6 +578,14 @@ export default function AnimalDetailPage() {
                 className="px-3 py-1.5 text-xs rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
               >
                 {t('detail.remove')}
+              </button>
+            )}
+            {!profile.is_active && (
+              <button
+                onClick={() => setModal({ kind: 'delete_animal' })}
+                className="px-3 py-1.5 text-xs rounded-lg bg-red-600 text-white hover:bg-red-700"
+              >
+                {t('animals.delete_animal')}
               </button>
             )}
           </div>
@@ -708,6 +745,13 @@ export default function AnimalDetailPage() {
         <DeleteConfirmModal
           onClose={() => setModal(null)}
           onConfirm={() => deleteRecord(modal.recordType, modal.id)}
+        />
+      )}
+      {modal?.kind === 'delete_animal' && (
+        <DeleteAnimalModal
+          animalId={profile.id}
+          onClose={() => setModal(null)}
+          onDeleted={() => navigate('/animals')}
         />
       )}
     </div>

@@ -147,6 +147,24 @@ pub async fn create_animal(
     Ok((StatusCode::CREATED, Json(animal)))
 }
 
+pub async fn delete_animal(
+    State(pool): State<SqlitePool>,
+    Path(id): Path<i64>,
+) -> Result<StatusCode> {
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM animals WHERE id = ?)")
+        .bind(id)
+        .fetch_one(&pool)
+        .await?;
+    if !exists {
+        return Err(AppError::NotFound);
+    }
+    sqlx::query("DELETE FROM animals WHERE id = ?")
+        .bind(id)
+        .execute(&pool)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn patch_animal(
     State(pool): State<SqlitePool>,
     Path(id): Path<i64>,

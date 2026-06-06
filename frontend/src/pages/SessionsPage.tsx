@@ -41,6 +41,11 @@ export default function SessionsPage() {
       .finally(() => setLoading(false))
   }, [])
 
+  const handleDelete = async (id: number) => {
+    await sessionsApi.delete(id)
+    setSessions(prev => prev.filter(s => s.id !== id))
+  }
+
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-6">
@@ -60,7 +65,12 @@ export default function SessionsPage() {
       ) : (
         <div className="space-y-3">
           {sessions.map(s => (
-            <SessionCard key={s.id} session={s} onClick={() => navigate(`/sessions/${s.id}`)} />
+            <SessionCard
+              key={s.id}
+              session={s}
+              onClick={() => navigate(`/sessions/${s.id}`)}
+              onDelete={() => handleDelete(s.id)}
+            />
           ))}
         </div>
       )}
@@ -70,15 +80,40 @@ export default function SessionsPage() {
 
 // ── Session card ──────────────────────────────────────────────────────────────
 
-function SessionCard({ session: s, onClick }: { session: SessionSummary; onClick: () => void }) {
+function SessionCard({
+  session: s,
+  onClick,
+  onDelete,
+}: {
+  session: SessionSummary
+  onClick: () => void
+  onDelete: () => Promise<void>
+}) {
   const { t } = useTranslation()
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const date = new Date(s.created_at).toLocaleDateString()
 
+  const confirmDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setDeleting(true)
+    try {
+      await onDelete()
+    } catch {
+      setDeleting(false)
+      setConfirming(false)
+    }
+  }
+
   return (
     <div
-      className="bg-white rounded-xl border border-slate-200 px-4 py-3 cursor-pointer hover:border-slate-300 hover:shadow-sm transition-all"
-      onClick={onClick}
+      className={`bg-white rounded-xl border px-4 py-3 transition-all ${
+        confirming
+          ? 'border-red-200'
+          : 'border-slate-200 cursor-pointer hover:border-slate-300 hover:shadow-sm'
+      }`}
+      onClick={confirming ? undefined : onClick}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
@@ -110,8 +145,36 @@ function SessionCard({ session: s, onClick }: { session: SessionSummary; onClick
           </div>
         </div>
 
-        {/* Chevron */}
-        <span className="text-slate-300 text-lg leading-none mt-0.5">›</span>
+        {/* Right-side actions */}
+        {confirming ? (
+          <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+            <span className="text-xs text-slate-500">{t('sessions.delete_confirm')}</span>
+            <button
+              onClick={e => { e.stopPropagation(); setConfirming(false) }}
+              className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1"
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              onClick={confirmDelete}
+              disabled={deleting}
+              className="text-xs text-red-600 hover:text-red-800 border border-red-200 rounded px-2 py-1 disabled:opacity-50"
+            >
+              {deleting ? t('common.loading') : t('sessions.delete_session')}
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1 shrink-0 mt-0.5">
+            <button
+              onClick={e => { e.stopPropagation(); setConfirming(true) }}
+              className="text-slate-300 hover:text-red-400 text-sm px-1 leading-none"
+              title={t('sessions.delete_session')}
+            >
+              ✕
+            </button>
+            <span className="text-slate-300 text-lg leading-none">›</span>
+          </div>
+        )}
       </div>
     </div>
   )

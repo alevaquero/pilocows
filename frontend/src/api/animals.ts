@@ -60,6 +60,8 @@ export const animalsApi = {
   create: (payload: CreateAnimalPayload) => api.post<Animal>('/animals', payload),
   patch: (id: number, payload: PatchAnimalPayload) =>
     api.patch<Animal>(`/animals/${id}`, payload),
+  delete: (id: number) =>
+    api.delete<void>(`/animals/${id}`),
 }
 
 export const BREEDS = [
