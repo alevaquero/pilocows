@@ -18,6 +18,7 @@ target/
 node_modules/
 frontend/dist/
 frontend/src-tauri/target/
+frontend/src-tauri/binaries/
 
 # SQLite
 *.db

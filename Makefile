@@ -21,6 +21,9 @@
 #     make bump-frontend  V=1.1.0  update frontend/package.json + tauri.conf.json
 #     make bump-all       V=1.1.0  bump all three sub-projects
 #
+#   Windows installer (run before build-frontend on Windows):
+#     make prepare-backend-sidecar   copy backend binary into src-tauri/binaries/
+#
 #   Info:
 #     make versions                print current versions
 # =============================================================================
@@ -31,6 +34,10 @@ HANDHELD_VERSION := $(shell cat handheld/VERSION 2>/dev/null | tr -d '[:space:]'
 BACKEND_VERSION  := $(shell grep '^version' backend/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
 FRONTEND_VERSION := $(shell node -p "require('./frontend/package.json').version" 2>/dev/null)
 
+# --- Rust target triple (used for sidecar naming) --------------------------
+
+TRIPLE := $(shell rustc -vV 2>/dev/null | grep '^host:' | sed 's/host: //')
+
 # --- Artifact paths --------------------------------------------------------
 
 HANDHELD_DIR        := handheld/.pio/build/sc01plus
@@ -40,12 +47,23 @@ HANDHELD_OTA_DATA   := $(HANDHELD_DIR)/ota_data_initial.bin
 HANDHELD_FIRMWARE   := $(HANDHELD_DIR)/firmware.bin
 
 BACKEND_BIN         := backend/target/release/pilocows-backend
+SIDECAR_DIR         := frontend/src-tauri/binaries
+
+# Platform-aware source/destination for the sidecar binary
+ifeq ($(OS),Windows_NT)
+  BACKEND_SIDECAR_SRC := $(BACKEND_BIN).exe
+  BACKEND_SIDECAR_DST := $(SIDECAR_DIR)/pilocows-backend-$(TRIPLE).exe
+else
+  BACKEND_SIDECAR_SRC := $(BACKEND_BIN)
+  BACKEND_SIDECAR_DST := $(SIDECAR_DIR)/pilocows-backend-$(TRIPLE)
+endif
 
 # ---------------------------------------------------------------------------
 
 .PHONY: build-handheld build-backend build-frontend build-all flash
 .PHONY: release-handheld release-backend release-frontend
 .PHONY: bump-handheld bump-backend bump-frontend bump-all
+.PHONY: prepare-backend-sidecar
 .PHONY: versions help
 
 # =============================================================================
@@ -143,6 +161,18 @@ open(f, 'w').write(json.dumps(p, indent=2) + '\n')"
 
 bump-all: bump-handheld bump-backend bump-frontend
 	@echo "All sub-projects bumped to $(V)"
+
+# =============================================================================
+# Windows sidecar — run this before build-frontend on Windows
+# =============================================================================
+
+## Build the backend and stage it under src-tauri/binaries/ with the correct
+## target-triple suffix so Tauri bundles it into the Windows installer.
+prepare-backend-sidecar: build-backend
+	@[ -n "$(TRIPLE)" ] || (echo "ERROR: could not detect rustc target triple"; exit 1)
+	@mkdir -p "$(SIDECAR_DIR)"
+	cp "$(BACKEND_SIDECAR_SRC)" "$(BACKEND_SIDECAR_DST)"
+	@echo "→ Sidecar ready: $(BACKEND_SIDECAR_DST)"
 
 # =============================================================================
 # Info
