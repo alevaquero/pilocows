@@ -16,21 +16,6 @@ Animal traceability system for Pilo's farm. Tracks cattle via ISO 11784/85 RFID 
 
 **Demo — scanning tags**
 
-<!-- Option A: <video> with <source> child -->
-<video autoplay loop muted playsinline width="100%">
-  <source src="docs/media/demo.mp4" type="video/mp4">
-</video>
-
-<!-- Option B: <video> with src attribute directly -->
-<video src="docs/media/demo.mp4" autoplay loop muted playsinline width="100%"></video>
-
-<!-- Option C: Markdown image syntax (GitHub native video support) -->
-![Demo](docs/media/demo.mp4)
-
-<!-- Option D: Absolute raw.githubusercontent.com URL (replace USER/REPO if needed) -->
-<video src="https://raw.githubusercontent.com/alevaquero/pilocows/main/docs/media/demo.mp4" autoplay loop muted playsinline width="100%"></video>
-
-<!-- Option E: Plain link fallback -->
 [▶ Watch demo](docs/media/demo.mp4)
 
 ---
