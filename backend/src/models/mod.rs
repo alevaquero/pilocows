@@ -275,6 +275,45 @@ pub struct AnimalProfile {
     pub removal: Option<Removal>,
 }
 
+// ─── Reports ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, FromRow)]
+pub struct HerdReportRow {
+    pub id: i64,
+    pub tag_number: String,
+    pub breed: String,
+    pub category: String,
+    pub sex: String,
+    pub dob: Option<String>,
+    pub is_active: i64,
+    // Weight
+    pub last_weight_kg: Option<f64>,
+    pub last_weighed_at: Option<String>,
+    pub prev_weight_kg: Option<f64>,
+    pub prev_weighed_at: Option<String>,
+    // Pregnancy
+    pub last_pregnancy_result: Option<String>,
+    pub last_pregnancy_checked_at: Option<String>,
+    pub last_pregnancy_due_date: Option<String>,
+    // Test
+    pub last_test_name: Option<String>,
+    pub last_test_result: Option<String>,
+    pub last_tested_at: Option<String>,
+    // Vaccination
+    pub next_vaccine: Option<String>,
+    pub next_vaccine_due_at: Option<String>,
+    pub overdue_count: i64,
+    // Removal
+    pub removal_reason: Option<String>,
+    pub removal_date: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct HerdReportQuery {
+    pub category: Option<String>,
+    pub include_inactive: Option<bool>,
+}
+
 // ─── Query filters ───────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize, Default)]

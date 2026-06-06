@@ -4,7 +4,8 @@
     "tags": "Tags",
     "sessions": "Sessions",
     "sync": "Sync",
-    "settings": "Settings"
+    "settings": "Settings",
+    "reports": "Reports"
   },
   "tags": {
     "title": "Tag Inventory",
@@ -185,6 +186,86 @@
     "restore_success": "Restore staged. The backend is restarting — wait a moment before continuing.",
     "restore_pick": "Choose a .db file…"
   },
+  "reports": {
+    "title": "Reports",
+    "herd": {
+      "title": "Herd Status",
+      "desc": "Weight, pregnancy status, and latest test results for each active animal.",
+      "weight": "Weight",
+      "change": "Change",
+      "pregnancy": "Pregnancy",
+      "last_test": "Last Test",
+      "next_vacc": "Next Vacc.",
+      "overdue": "overdue",
+      "vacc_status": "Vaccination",
+      "vacc_all": "All",
+      "vacc_ok": "Up to date",
+      "vacc_none": "None recorded",
+      "breed_all": "All breeds"
+    },
+    "vaccinations": {
+      "title": "Vaccination Calendar",
+      "desc": "Animals with upcoming or overdue vaccinations (next 30 days).",
+      "vaccine": "Vaccine",
+      "due": "Due Date",
+      "status": "Status",
+      "overdue_only": "Overdue only",
+      "status_overdue": "Overdue",
+      "status_soon": "Due Soon",
+      "status_upcoming": "Upcoming",
+      "no_data": "No upcoming or overdue vaccinations.",
+      "days_within": "Due within",
+      "days_label": "days",
+      "days_any": "Any date",
+      "category": "Category"
+    },
+    "pregnancies": {
+      "title": "Pregnancy Report",
+      "desc": "Most recent pregnancy check per active animal.",
+      "result": "Result",
+      "checked": "Last Check",
+      "due": "Due Date",
+      "days": "Days Until",
+      "no_data": "No pregnancy records.",
+      "result_all": "All results",
+      "pregnant_any": "Pregnant (any)",
+      "check_from": "Check from",
+      "check_to": "Check to",
+      "due_from": "Due from",
+      "due_to": "Due to"
+    },
+    "weights": {
+      "title": "Weight Progress",
+      "desc": "Latest weight and gain/loss since previous weighing.",
+      "current": "Current (kg)",
+      "previous": "Previous (kg)",
+      "change": "Change (kg)",
+      "date": "Last Weighed",
+      "no_data": "No weight records.",
+      "min_weight": "Min (kg)",
+      "max_weight": "Max (kg)",
+      "since": "Weighed since",
+      "gain_filter": "Change",
+      "all_changes": "All",
+      "gained": "Gained",
+      "lost": "Lost",
+      "sort": "Sort",
+      "sort_weight_desc": "Heaviest first",
+      "sort_weight_asc": "Lightest first",
+      "sort_gain_desc": "Most gained",
+      "sort_gain_asc": "Most lost"
+    },
+    "removals": {
+      "title": "Removals",
+      "desc": "Animals removed from the herd — sold, died, or slaughtered.",
+      "reason": "Reason",
+      "date": "Date",
+      "no_data": "No animals have been removed.",
+      "reason_all": "All reasons",
+      "from": "From",
+      "to": "To"
+    }
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",
@@ -192,6 +273,7 @@
     "loading": "Loading…",
     "error": "Error",
     "confirm": "Confirm",
-    "back": "Back"
+    "back": "Back",
+    "print": "Print"
   }
 }

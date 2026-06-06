@@ -4,7 +4,8 @@
     "tags": "Caravanas",
     "sessions": "Sesiones",
     "sync": "Sincronizar",
-    "settings": "Configuración"
+    "settings": "Configuración",
+    "reports": "Informes"
   },
   "tags": {
     "title": "Caravanas",
@@ -185,6 +186,86 @@
     "restore_success": "Restauración en proceso. El sistema está reiniciando — esperá un momento antes de continuar.",
     "restore_pick": "Elegí un archivo .db…"
   },
+  "reports": {
+    "title": "Informes",
+    "herd": {
+      "title": "Estado del Rodeo",
+      "desc": "Peso, estado de preñez y últimos resultados de test por animal activo.",
+      "weight": "Peso",
+      "change": "Variación",
+      "pregnancy": "Preñez",
+      "last_test": "Último Test",
+      "next_vacc": "Próx. Vacc.",
+      "overdue": "vencidas",
+      "vacc_status": "Vacunación",
+      "vacc_all": "Todas",
+      "vacc_ok": "Al día",
+      "vacc_none": "Sin registros",
+      "breed_all": "Todas las razas"
+    },
+    "vaccinations": {
+      "title": "Calendario de Vacunación",
+      "desc": "Animales con vacunaciones próximas o vencidas (próximos 30 días).",
+      "vaccine": "Vacuna",
+      "due": "Fecha límite",
+      "status": "Estado",
+      "overdue_only": "Solo vencidas",
+      "status_overdue": "Vencida",
+      "status_soon": "Próxima",
+      "status_upcoming": "Programada",
+      "no_data": "No hay vacunaciones próximas ni vencidas.",
+      "days_within": "Vence en",
+      "days_label": "días",
+      "days_any": "Cualquier fecha",
+      "category": "Categoría"
+    },
+    "pregnancies": {
+      "title": "Informe de Preñez",
+      "desc": "Último control de preñez por animal activo.",
+      "result": "Resultado",
+      "checked": "Último control",
+      "due": "Fecha probable",
+      "days": "Días",
+      "no_data": "No hay registros de preñez.",
+      "result_all": "Todos los resultados",
+      "pregnant_any": "Preñada (cualquier)",
+      "check_from": "Control desde",
+      "check_to": "Control hasta",
+      "due_from": "Parto desde",
+      "due_to": "Parto hasta"
+    },
+    "weights": {
+      "title": "Progreso de Peso",
+      "desc": "Peso actual y variación respecto al pesaje anterior.",
+      "current": "Actual (kg)",
+      "previous": "Anterior (kg)",
+      "change": "Variación (kg)",
+      "date": "Último pesaje",
+      "no_data": "No hay registros de peso.",
+      "min_weight": "Mín (kg)",
+      "max_weight": "Máx (kg)",
+      "since": "Pesado desde",
+      "gain_filter": "Variación",
+      "all_changes": "Todas",
+      "gained": "Ganó",
+      "lost": "Perdió",
+      "sort": "Ordenar",
+      "sort_weight_desc": "Mayor peso",
+      "sort_weight_asc": "Menor peso",
+      "sort_gain_desc": "Mayor ganancia",
+      "sort_gain_asc": "Mayor pérdida"
+    },
+    "removals": {
+      "title": "Bajas",
+      "desc": "Animales dados de baja — vendidos, muertos o faenados.",
+      "reason": "Motivo",
+      "date": "Fecha",
+      "no_data": "No hay animales dados de baja.",
+      "reason_all": "Todos los motivos",
+      "from": "Desde",
+      "to": "Hasta"
+    }
+  },
   "common": {
     "save": "Guardar",
     "cancel": "Cancelar",
@@ -192,6 +273,7 @@
     "loading": "Cargando...",
     "error": "Error",
     "confirm": "Confirmar",
-    "back": "Atras"
+    "back": "Atras",
+    "print": "Imprimir"
   }
 }

@@ -7,6 +7,12 @@ use tokio::time::{timeout, Duration};
 // File save (backup download)
 // ---------------------------------------------------------------------------
 
+/// Open the system print dialog for the main window.
+#[tauri::command]
+pub fn print_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.print().map_err(|e| e.to_string())
+}
+
 /// Save raw bytes to the user's Downloads folder.
 /// Returns the absolute path where the file was written.
 #[tauri::command]

@@ -8,6 +8,12 @@ import SessionsPage from './pages/SessionsPage'
 import SessionDetailPage from './pages/SessionDetailPage'
 import SyncPage from './pages/SyncPage'
 import SettingsPage from './pages/SettingsPage'
+import ReportsPage from './pages/ReportsPage'
+import HerdStatusReport from './pages/reports/HerdStatusReport'
+import VaccinationCalendarReport from './pages/reports/VaccinationCalendarReport'
+import PregnancyReport from './pages/reports/PregnancyReport'
+import WeightProgressReport from './pages/reports/WeightProgressReport'
+import RemovalsReport from './pages/reports/RemovalsReport'
 import SplashScreen from './components/SplashScreen'
 
 export default function App() {
@@ -27,6 +33,12 @@ export default function App() {
             <Route path="sessions/:id" element={<SessionDetailPage />} />
             <Route path="sync" element={<SyncPage />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route path="reports" element={<ReportsPage />} />
+            <Route path="reports/herd" element={<HerdStatusReport />} />
+            <Route path="reports/vaccinations" element={<VaccinationCalendarReport />} />
+            <Route path="reports/pregnancies" element={<PregnancyReport />} />
+            <Route path="reports/weights" element={<WeightProgressReport />} />
+            <Route path="reports/removals" element={<RemovalsReport />} />
           </Route>
         </Routes>
       </HashRouter>

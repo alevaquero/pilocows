@@ -12,3 +12,13 @@ input, textarea {
   user-select: text;
   -webkit-user-select: text;
 }
+
+@media print {
+  /* Preserve badge and highlight colors */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* Avoid splitting a row across pages */
+  tr { page-break-inside: avoid; }
+}

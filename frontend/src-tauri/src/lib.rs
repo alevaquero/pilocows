@@ -89,6 +89,7 @@ pub fn run() {
             commands::ble_disconnect,
             commands::ble_check_connection,
             commands::save_backup,
+            commands::print_window,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
