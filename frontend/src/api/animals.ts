@@ -64,7 +64,7 @@ export const animalsApi = {
 
 export const BREEDS = [
   'Angus', 'Shorthorn', 'Hereford', 'Holando Argentino',
-  'Brangus', 'Brahman', 'Limangus', 'Crossbred', 'Other',
+  'Brangus', 'Brahman', 'Charolais', 'Limangus', 'Crossbred', 'Other',
 ]
 
 export const CATEGORIES = ['bull', 'cow', 'heifer', 'steer', 'male_calf', 'female_calf']
