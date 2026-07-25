@@ -8,25 +8,18 @@
 #include "bsp_i2c.h"
 #include "bsp_display.h"
 #include "lvgl.h"
+#include "nvs_storage.h"
+#include "ble_gatt_server.h"
 
 static const char *TAG = "main";
 
-// Settings and UI state
-typedef struct {
-    char language[3];  // "en" or "es"
-    bool buzzer_enabled;
-    bool vibrator_enabled;
-} AppSettings;
-
-static AppSettings settings = {
-    .language = "en",
-    .buzzer_enabled = true,
-    .vibrator_enabled = true
-};
+static AppSettings settings;
+static ScanList scan_list;
 
 enum AppScreen {
     SCREEN_DEMO,
-    SCREEN_SETTINGS
+    SCREEN_SETTINGS,
+    SCREEN_SCANS
 };
 
 static enum AppScreen current_screen = SCREEN_DEMO;
@@ -68,6 +61,7 @@ static I18nString strings[] = {
 // ===== Forward declarations =====
 static void show_demo_screen(void);
 static void show_settings_screen(void);
+static void show_scan_screen(void);
 
 // ===== Tap area handlers =====
 static void on_counter_tap(lv_event_t *e) {
@@ -92,24 +86,40 @@ static void on_language_tap(lv_event_t *e) {
     } else {
         strcpy(settings.language, "en");
     }
+    nvs_save_settings(&settings);
     show_settings_screen();
 }
 
 static void on_buzzer_tap(lv_event_t *e) {
     if (current_screen != SCREEN_SETTINGS) return;
     settings.buzzer_enabled = !settings.buzzer_enabled;
+    nvs_save_settings(&settings);
     show_settings_screen();
 }
 
 static void on_vibrator_tap(lv_event_t *e) {
     if (current_screen != SCREEN_SETTINGS) return;
     settings.vibrator_enabled = !settings.vibrator_enabled;
+    nvs_save_settings(&settings);
+    show_settings_screen();
+}
+
+static void on_clear_scans_tap(lv_event_t *e) {
+    if (current_screen != SCREEN_SETTINGS) return;
+    nvs_clear_scans();
+    scan_list.count = 0;
     show_settings_screen();
 }
 
 static void on_back_tap(lv_event_t *e) {
-    if (current_screen == SCREEN_SETTINGS) {
+    if (current_screen == SCREEN_SETTINGS || current_screen == SCREEN_SCANS) {
         show_demo_screen();
+    }
+}
+
+static void on_scans_tap(lv_event_t *e) {
+    if (current_screen == SCREEN_DEMO) {
+        show_scan_screen();
     }
 }
 
@@ -135,10 +145,19 @@ static void show_demo_screen(void) {
     lv_obj_add_flag(counter_label, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(counter_label, on_counter_tap, LV_EVENT_CLICKED, NULL);
 
-    // Settings label (bottom, tappable)
+    // Scan count info (tappable to view scans)
+    lv_obj_t *scan_info = lv_label_create(lv_scr_act());
+    char scan_buf[32];
+    snprintf(scan_buf, sizeof(scan_buf), "Scans: %d", scan_list.count);
+    lv_label_set_text(scan_info, scan_buf);
+    lv_obj_align(scan_info, LV_ALIGN_BOTTOM_LEFT, 10, -20);
+    lv_obj_add_flag(scan_info, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(scan_info, on_scans_tap, LV_EVENT_CLICKED, NULL);
+
+    // Settings label (bottom right, tappable)
     lv_obj_t *settings_label = lv_label_create(lv_scr_act());
     lv_label_set_text(settings_label, STR(STR_SETTINGS));
-    lv_obj_align(settings_label, LV_ALIGN_BOTTOM_MID, 0, -20);
+    lv_obj_align(settings_label, LV_ALIGN_BOTTOM_RIGHT, -10, -20);
     lv_obj_add_flag(settings_label, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(settings_label, on_settings_tap, LV_EVENT_CLICKED, NULL);
 }
@@ -207,6 +226,85 @@ static void show_settings_screen(void) {
     lv_label_set_text(vib_text, vib_buf);
     lv_obj_center(vib_text);
 
+    y_pos += item_height;
+
+    // Clear scans button
+    lv_obj_t *clear_container = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(clear_container, 300, 40);
+    lv_obj_set_pos(clear_container, 10, y_pos);
+    lv_obj_set_style_bg_color(clear_container, lv_color_hex(0xff6b6b), 0);
+    lv_obj_add_flag(clear_container, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(clear_container, on_clear_scans_tap, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *clear_text = lv_label_create(clear_container);
+    char clear_buf[64];
+    snprintf(clear_buf, sizeof(clear_buf), "Clear Scans (%d)", scan_list.count);
+    lv_label_set_text(clear_text, clear_buf);
+    lv_obj_center(clear_text);
+
+    // Back button
+    lv_obj_t *back_label = lv_label_create(lv_scr_act());
+    lv_label_set_text(back_label, STR(STR_BACK));
+    lv_obj_align(back_label, LV_ALIGN_BOTTOM_MID, 0, -20);
+    lv_obj_add_flag(back_label, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(back_label, on_back_tap, LV_EVENT_CLICKED, NULL);
+}
+
+static void show_scan_screen(void) {
+    current_screen = SCREEN_SCANS;
+    lv_obj_clean(lv_scr_act());
+
+    // Background
+    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_white(), 0);
+
+    // Title
+    lv_obj_t *title = lv_label_create(lv_scr_act());
+    char title_buf[64];
+    snprintf(title_buf, sizeof(title_buf), "Scans: %d", scan_list.count);
+    lv_label_set_text(title, title_buf);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
+
+    // Scan list container with scroll
+    lv_obj_t *list_container = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(list_container, 320, 380);
+    lv_obj_set_pos(list_container, 0, 40);
+    lv_obj_set_style_bg_color(list_container, lv_color_white(), 0);
+    lv_obj_set_style_border_width(list_container, 1, 0);
+    lv_obj_set_scroll_dir(list_container, LV_DIR_VER);
+
+    if (scan_list.count == 0) {
+        lv_obj_t *empty_label = lv_label_create(list_container);
+        lv_label_set_text(empty_label, "No scans yet");
+        lv_obj_center(empty_label);
+    } else {
+        // Display scans (show last 10 to avoid clutter)
+        int start_idx = scan_list.count > 10 ? scan_list.count - 10 : 0;
+        int y_offset = 0;
+
+        for (int i = start_idx; i < scan_list.count; i++) {
+            lv_obj_t *scan_item = lv_obj_create(list_container);
+            lv_obj_set_size(scan_item, 300, 45);
+            lv_obj_set_pos(scan_item, 5, y_offset);
+            lv_obj_set_style_bg_color(scan_item, lv_color_hex(0xf5f5f5), 0);
+            lv_obj_set_style_border_width(scan_item, 0, 0);
+            lv_obj_set_style_pad_all(scan_item, 5, 0);
+
+            char scan_text[64];
+            snprintf(scan_text, sizeof(scan_text), "EID: %s", scan_list.scans[i].eid);
+
+            lv_obj_t *eid_label = lv_label_create(scan_item);
+            lv_label_set_text(eid_label, scan_text);
+            lv_obj_set_width(eid_label, 290);
+            lv_label_set_long_mode(eid_label, LV_LABEL_LONG_WRAP);
+            lv_obj_center(eid_label);
+
+            y_offset += 50;
+        }
+
+        // Scroll to bottom to show latest scans
+        lv_obj_scroll_to_view_recursive(list_container, LV_ANIM_OFF);
+    }
+
     // Back button
     lv_obj_t *back_label = lv_label_create(lv_scr_act());
     lv_label_set_text(back_label, STR(STR_BACK));
@@ -261,7 +359,44 @@ void app_main(void)
         ESP_LOGE(TAG, "Display initialization failed: %s", esp_err_to_name(err));
     }
 
+    // Load settings and scans from NVS
+    ESP_LOGI(TAG, "Loading settings and scan history from NVS...");
+    nvs_load_settings(&settings);
+    nvs_load_scans(&scan_list);
+
+    // Add mock scan data for testing (remove when RFID driver is implemented)
+    if (scan_list.count == 0) {
+        ESP_LOGI(TAG, "Adding mock scan data for testing...");
+        strncpy(scan_list.scans[0].eid, "98765432101", sizeof(scan_list.scans[0].eid) - 1);
+        scan_list.scans[0].timestamp = 1000;
+        strncpy(scan_list.scans[1].eid, "12345678901", sizeof(scan_list.scans[1].eid) - 1);
+        scan_list.scans[1].timestamp = 2000;
+        strncpy(scan_list.scans[2].eid, "55555555555", sizeof(scan_list.scans[2].eid) - 1);
+        scan_list.scans[2].timestamp = 3000;
+        scan_list.count = 3;
+    }
+
+    // Initialize BLE GATT server
+    ESP_LOGI(TAG, "Initializing BLE GATT server...");
+    DeviceStatus device_status = {
+        .battery_percent = 100,
+        .scan_count = scan_list.count,
+        .firmware_version = "0.1.0-alpha"
+    };
+    err = ble_gatt_server_init(&scan_list, &device_status);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize BLE: %s", esp_err_to_name(err));
+    }
+
     ESP_LOGI(TAG, "========== System Ready ==========");
+    ESP_LOGI(TAG, "Language: %s, Buzzer: %s, Vibrator: %s, Scans: %d",
+             settings.language, settings.buzzer_enabled ? "ON" : "OFF",
+             settings.vibrator_enabled ? "ON" : "OFF", scan_list.count);
+
+    // Debug: Log current scan list
+    for (int i = 0; i < scan_list.count; i++) {
+        ESP_LOGI(TAG, "  Scan[%d]: %s @ %u", i, scan_list.scans[i].eid, scan_list.scans[i].timestamp);
+    }
 
     // Show demo screen
     show_demo_screen();
