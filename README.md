@@ -40,7 +40,8 @@ Animal traceability system for Pilo's farm. Tracks cattle via ISO 11784/85 RFID 
 
 | Sub-project | Stack | Role |
 |---|---|---|
-| `handheld/` | ESP32-S3 · C++ · ESP-IDF · LVGL | Scans RFID tags, stores sessions, exposes data over BLE |
+| `handheld/` | ESP32-S3 · C++ · ESP-IDF · LVGL | Scans RFID tags (SC01 Plus), stores sessions, exposes data over BLE |
+| `handheld_crowpanel/` | ESP32-P4 · C++ · ESP-IDF · LVGL | Scans RFID tags (CrowPanel Advanced 5"), alternative hardware variant |
 | `backend/` | Rust · Axum · SQLite | REST API — animals, tags, health records |
 | `frontend/` | Tauri 2 · React · TypeScript · Tailwind | Desktop app — BLE sync, animal management UI |
 
@@ -52,7 +53,7 @@ The backend is a standalone binary intentionally decoupled from Tauri so it can 
 
 ```
 pilocows/
-├── handheld/               ESP32-S3 firmware (PlatformIO)
+├── handheld/               ESP32-S3 firmware — SC01 Plus (PlatformIO)
 │   ├── src/
 │   │   ├── board_config.h  Pin definitions
 │   │   ├── display/        LCD + touch driver (ST7796UI, FT6336U)
@@ -62,6 +63,24 @@ pilocows/
 │   │   ├── ui/             LVGL screens
 │   │   └── i18n/           String tables (EN / ES)
 │   └── platformio.ini
+│
+├── handheld_crowpanel/     ESP32-P4 firmware — CrowPanel Advanced (PlatformIO)
+│   ├── main/
+│   │   ├── board_config.h  Pin definitions (RGB, touch)
+│   │   ├── display/        RGB LCD driver + LVGL (display.cpp)
+│   │   ├── touch/          GT911 touch driver (touch_gt911.cpp)
+│   │   ├── main.cpp        Entry point + demo UI
+│   │   └── CMakeLists.txt
+│   ├── platformio.ini
+│   ├── sdkconfig.defaults
+│   └── README.md           Build instructions
+│
+├── handheld_common/        Shared modules (planned Phase 2)
+│   ├── i18n/               String tables (shared)
+│   ├── ble/                GATT server logic (MCU-agnostic)
+│   ├── rfid/               UART reader (MCU-agnostic)
+│   ├── ui/                 LVGL screens (display-agnostic)
+│   └── storage/            Session storage (NVS-agnostic)
 │
 ├── backend/                Rust REST API
 │   ├── src/
@@ -132,6 +151,56 @@ monitor_port = /dev/cu.usbmodemXXXX
 
 - All pin definitions live in `src/board_config.h` — never hardcode GPIO numbers elsewhere.
 - Every user-visible string must go through `i18n_t(STR_...)`. Adding a string requires updating `strings_en.h`, `strings_es.h`, and the lookup table in `i18n.cpp`.
+
+---
+
+## Handheld (CrowPanel Variant)
+
+**Status**: Phase 1 MVP (Display + Touch drivers, demo UI)
+
+Alternative hardware platform using [CrowPanel Advanced 5" ESP32-P4](https://github.com/easyteacher/CrowPanel-Advanced-5inch-ESP32-P4-HMI-AI-Display-800x480-IPS-Touch-Screen).
+
+### Hardware
+
+| Component | Part |
+|---|---|
+| MCU | ESP32-P4 (RISC-V, 400 MHz, 16 MB flash, 32 MB PSRAM) |
+| Connectivity | ESP32-C6-MINI-1 (WiFi/BLE via SDIO, Phase 2+) |
+| Display | RGB parallel 800×480 IPS, 16-bit RGB565, 25 MHz PCLK |
+| Touch | GT911 capacitive, I2C |
+
+### Build
+
+```bash
+cd handheld_crowpanel
+
+# Build only
+pio run -e crowpanel
+
+# Build and flash
+pio run -e crowpanel -t upload
+
+# Open serial monitor (115200 baud)
+pio device monitor -e crowpanel
+```
+
+**Full guide**: [`README_CROWPANEL.md`](README_CROWPANEL.md)
+
+### Flash port
+
+Default is `/dev/cu.usbserial-0`. Update `platformio.ini` if different:
+
+```ini
+upload_port = /dev/cu.usbserial-0
+monitor_port = /dev/cu.usbserial-0
+```
+
+### Project structure notes
+
+- All pin definitions live in `main/board_config.h`
+- Display driver: `main/display/display.cpp` (RGB panel + LVGL)
+- Touch driver: `main/touch/touch_gt911.cpp` (GT911 I2C)
+- Phase 2+ will extract shared code to `handheld_common/`
 
 ---
 

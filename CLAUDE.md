@@ -6,24 +6,39 @@ Animal traceability system for Pilo's farm. Tracks cattle via ISO 11784/85 RFID 
 
 ```
 pilocows/
-├── handheld/      # ESP32-S3 firmware — PlatformIO + ESP-IDF
-├── frontend/      # Tauri + React desktop app (macOS & Windows)
-├── backend/       # Standalone Rust Axum REST API + SQLite
-└── docs/          # Architecture, API spec, BLE protocol
+├── handheld/           # ESP32-S3 firmware (SC01 Plus) — PlatformIO + ESP-IDF
+├── handheld_crowpanel/ # ESP32-P4 firmware (CrowPanel) — PlatformIO + ESP-IDF [NEW]
+├── handheld_common/    # Shared modules (planned Phase 2)
+├── frontend/           # Tauri + React desktop app (macOS & Windows)
+├── backend/            # Standalone Rust Axum REST API + SQLite
+└── docs/               # Architecture, API spec, BLE protocol
 ```
 
 **Rule**: backend/ is an independent binary. In Phase 1, Tauri launches it as a sidecar. Never couple it to Tauri internals — it must be deployable as a cloud service later with zero code changes.
 
+**Multi-device strategy** (Phase 1+): handheld/ and handheld_crowpanel/ are separate implementations. Phase 2 will extract shared UI/driver logic to handheld_common/ so both variants use the same code where possible.
+
 ## Sub-project Overview
 
-### handheld/
+### handheld/ (SC01 Plus)
 - **MCU**: ESP32-S3 (WT32-S3-WROVER-2-N8R2)
 - **Board**: ZX3D50CE02S-USRC-4832 (SC01 Plus by Smart Panlee)
 - **IDE**: VS Code + PlatformIO + ESP-IDF framework
 - **UI library**: LVGL v8+ (via ESP-IDF component)
 - **Display**: ST7796UI, 480×320, RGB565, 8-bit 8080 parallel interface
-- **Touch**: FT6336U, I2C
+- **Touch**: FT6336U (resistive), I2C
 - **RFID reader**: 134.2K AGV FDX-B ISO11784/85 TTL UART module
+
+### handheld_crowpanel/ (CrowPanel Advanced 5")
+- **MCU**: ESP32-P4 (dual-core RISC-V, 400 MHz) + ESP32-C6-MINI-1 (WiFi/BLE via SDIO)
+- **Board**: CrowPanel Advanced 5" ESP32-P4 HMI AI Display (800×480 IPS)
+- **IDE**: VS Code + PlatformIO + ESP-IDF framework
+- **UI library**: LVGL v8.3 (via ESP-IDF component)
+- **Display**: RGB parallel 16-bit, 800×480, IPS, 25 MHz pixel clock
+- **Touch**: GT911 (capacitive, 5-point), I2C
+- **Memory**: 16 MB Flash, 32 MB PSRAM
+- **RFID reader**: (TBD — same as SC01 Plus, UART pins TBD)
+- **Status**: Phase 1 MVP (display + touch drivers, demo UI)
 
 ### frontend/
 - **Shell**: Tauri 2.x
@@ -39,9 +54,11 @@ pilocows/
 - **Migrations**: sqlx-cli
 - **API**: REST, JSON
 
-## Hardware Pin Reference — SC01 Plus
+## Hardware Pin Reference
 
-### LCD (ST7796UI — 8080 8-bit parallel, NOT SPI)
+### SC01 Plus (ESP32-S3)
+
+#### LCD (ST7796UI — 8080 8-bit parallel, NOT SPI)
 | Signal   | GPIO |
 |----------|------|
 | BL_PWM   | 45   |
@@ -99,6 +116,65 @@ pilocows/
 | Vibrator motor | 21   | EXT_IO6 |
 
 Buzzer: use onboard I2S audio amplifier (tone generation via I2S).
+
+### CrowPanel Advanced 5" (ESP32-P4)
+
+#### LCD (RGB Parallel — 16-bit, 800×480)
+| Signal     | GPIO |
+|------------|------|
+| PCLK       | 3    |
+| DE         | 2    |
+| HSYNC      | 40   |
+| VSYNC      | 41   |
+| DATA[0]    | 8    |
+| DATA[1]    | 7    |
+| DATA[2]    | 6    |
+| DATA[3]    | 5    |
+| DATA[4]    | 4    |
+| DATA[5]    | 14   |
+| DATA[6]    | 13   |
+| DATA[7]    | 12   |
+| DATA[8]    | 11   |
+| DATA[9]    | 10   |
+| DATA[10]   | 9    |
+| DATA[11]   | 19   |
+| DATA[12]   | 18   |
+| DATA[13]   | 17   |
+| DATA[14]   | 16   |
+| DATA[15]   | 15   |
+
+Pixel clock: 25 MHz. Refresh ~42 Hz @ 800×480 16-bit RGB565.
+
+#### Touch (GT911 — I2C, capacitive)
+| Signal | GPIO |
+|--------|------|
+| SDA    | 45   |
+| SCL    | 46   |
+| INT    | 42   |
+| RST    | 36   |
+
+#### Power Management (LDO)
+| Rail | Voltage | Purpose |
+|------|---------|---------|
+| LDO3 | 2.5V    | Camera, misc (not used in Phase 1) |
+| LDO4 | 3.3V    | I/O rail (touch, display control) |
+
+#### Backlight & Audio
+- **Backlight**: Controlled by STC8H1KXX management MCU (Phase 1: no GPIO control)
+- **Audio**: I2S amplifier + onboard speaker jack (Phase 2+)
+- **Camera**: MIPI CSI (not used for pilocows)
+
+#### Connectivity Module (Phase 2+)
+- **ESP32-C6-MINI-1**: WiFi/BLE via SDIO interface (GPIO 49-54)
+- **Requires**: ESP_HOSTED framework + C6 firmware
+- **Defer**: To Phase 2+
+
+#### TBD (Requires Hardware Inspection)
+- RFID UART pins (not in factory examples)
+- Button GPIO mappings
+- Buzzer/vibrator GPIO
+- RTC (DS3231 I2C address)
+- SD card (if exposed on CrowPanel)
 
 ## System Architecture
 
