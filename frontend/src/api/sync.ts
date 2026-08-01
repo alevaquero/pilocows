@@ -7,6 +7,9 @@ import { api } from './client'
 export interface DeviceInfo {
   id: string
   name: string
+  // Signal strength in dBm at scan time (e.g. -50 strong, -90 very weak).
+  // null if the OS didn't report one for this advertisement.
+  rssi: number | null
 }
 
 export interface HeldSession {
@@ -29,6 +32,7 @@ export interface SessionRecord {
   test_name?: string
   vaccines?: string
   notes?: string
+  has_audio: boolean
 }
 
 // ---------------------------------------------------------------------------

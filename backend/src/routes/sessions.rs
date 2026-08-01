@@ -1,8 +1,10 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{header, StatusCode},
+    response::IntoResponse,
     Json,
 };
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use sqlx::SqlitePool;
 
 use crate::{
@@ -12,6 +14,20 @@ use crate::{
         SessionSummary, SyncSessionPayload, SyncSessionResponse,
     },
 };
+
+/// Decode an optional base64 field from a sync payload. `None` means "no
+/// audio to send" (old handheld, or nothing changed) — not an error. Only a
+/// present-but-invalid string is a bad request.
+fn decode_b64_audio(field: &Option<String>) -> Result<Option<Vec<u8>>> {
+    match field {
+        None => Ok(None),
+        Some(s) if s.is_empty() => Ok(None),
+        Some(s) => BASE64
+            .decode(s)
+            .map(Some)
+            .map_err(|e| AppError::BadRequest(format!("invalid base64 audio: {e}"))),
+    }
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -94,17 +110,23 @@ pub async fn sync_session(
 ) -> Result<(StatusCode, Json<SyncSessionResponse>)> {
     let s = &payload.session;
     let created_at = unix_to_iso(s.created_at);
+    let note_audio = decode_b64_audio(&s.note_audio_b64)?;
 
     // Upsert session row — preserve frontend-editable fields on conflict.
+    // note_audio only overwrites when the payload actually carries bytes
+    // (COALESCE onto the existing column) — old handhelds and unchanged
+    // re-syncs send no audio at all, and that must not wipe out audio a
+    // previous sync already stored.
     let session_id: i64 = sqlx::query_scalar(
         "INSERT INTO sessions
              (handheld_session_id, device_id, name, type,
-              created_at, tag_count, handheld_note, synced_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+              created_at, tag_count, handheld_note, note_audio, synced_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
          ON CONFLICT(handheld_session_id, device_id) DO UPDATE SET
              name          = excluded.name,
              tag_count     = excluded.tag_count,
              handheld_note = excluded.handheld_note,
+             note_audio    = COALESCE(excluded.note_audio, sessions.note_audio),
              synced_at     = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
          RETURNING id",
     )
@@ -115,6 +137,7 @@ pub async fn sync_session(
     .bind(&created_at)
     .bind(s.tag_count)
     .bind(&s.note)
+    .bind(&note_audio)
     .fetch_one(&pool)
     .await?;
 
@@ -123,20 +146,23 @@ pub async fn sync_session(
     for rec in &payload.records {
         let scanned_at = unix_to_iso(rec.ts);
         let event_data = build_event_data(rec);
+        let audio = decode_b64_audio(&rec.audio_b64)?;
 
         sqlx::query(
-            "INSERT INTO session_records (session_id, eid, scanned_at, event_data, note)
-             VALUES (?, ?, ?, ?, ?)
+            "INSERT INTO session_records (session_id, eid, scanned_at, event_data, note, audio)
+             VALUES (?, ?, ?, ?, ?, ?)
              ON CONFLICT(session_id, eid) DO UPDATE SET
                  scanned_at = excluded.scanned_at,
                  event_data = excluded.event_data,
-                 note       = excluded.note",
+                 note       = excluded.note,
+                 audio      = COALESCE(excluded.audio, session_records.audio)",
         )
         .bind(session_id)
         .bind(&rec.eid)
         .bind(&scanned_at)
         .bind(&event_data)
         .bind(&rec.note)
+        .bind(&audio)
         .execute(&pool)
         .await?;
 
@@ -158,7 +184,10 @@ pub async fn list_sessions(
     State(pool): State<SqlitePool>,
 ) -> Result<Json<Vec<SessionSummary>>> {
     let rows = sqlx::query_as::<_, SessionSummary>(
-        "SELECT s.*,
+        "SELECT s.id, s.handheld_session_id, s.device_id, s.name, s.type,
+                s.created_at, s.tag_count, s.handheld_note, s.farm, s.operator,
+                s.comments, s.synced_at,
+                (s.note_audio IS NOT NULL) AS has_note_audio,
                 COUNT(r.id) AS record_count
          FROM sessions s
          LEFT JOIN session_records r ON r.session_id = s.id
@@ -177,7 +206,10 @@ pub async fn get_session(
     Path(id): Path<i64>,
 ) -> Result<Json<SessionDetail>> {
     let session = sqlx::query_as::<_, Session>(
-        "SELECT * FROM sessions WHERE id = ?",
+        "SELECT id, handheld_session_id, device_id, name, type, created_at,
+                tag_count, handheld_note, farm, operator, comments, synced_at,
+                (note_audio IS NOT NULL) AS has_note_audio
+         FROM sessions WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(&pool)
@@ -187,6 +219,7 @@ pub async fn get_session(
     // Fetch records, joining tags/animals to get registration state.
     let records = sqlx::query_as::<_, SessionRecord>(
         "SELECT r.id, r.session_id, r.eid, r.scanned_at, r.event_data, r.note,
+                (r.audio IS NOT NULL) AS has_audio,
                 CASE WHEN t.id IS NOT NULL THEN 1 ELSE 0 END AS tag_registered,
                 a.id AS animal_id
          FROM session_records r
@@ -202,6 +235,44 @@ pub async fn get_session(
     Ok(Json(SessionDetail { session, records }))
 }
 
+// ─── GET /api/v1/sessions/:id/audio ────────────────────────────────────────────
+// Session-level voice note, raw WAV bytes (not JSON) — kept separate from
+// get_session so listing/detail fetches never have to pull the blob along
+// with everything else.
+
+pub async fn get_session_note_audio(
+    State(pool): State<SqlitePool>,
+    Path(id): Path<i64>,
+) -> Result<impl IntoResponse> {
+    let row: Option<Option<Vec<u8>>> =
+        sqlx::query_scalar("SELECT note_audio FROM sessions WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&pool)
+            .await?;
+
+    let bytes = row.flatten().ok_or(AppError::NotFound)?;
+    Ok((StatusCode::OK, [(header::CONTENT_TYPE, "audio/wav")], bytes))
+}
+
+// ─── GET /api/v1/sessions/:id/records/:eid/audio ───────────────────────────────
+// Per-tag voice note, raw WAV bytes.
+
+pub async fn get_record_audio(
+    State(pool): State<SqlitePool>,
+    Path((id, eid)): Path<(i64, String)>,
+) -> Result<impl IntoResponse> {
+    let row: Option<Option<Vec<u8>>> = sqlx::query_scalar(
+        "SELECT audio FROM session_records WHERE session_id = ? AND eid = ?",
+    )
+    .bind(id)
+    .bind(&eid)
+    .fetch_optional(&pool)
+    .await?;
+
+    let bytes = row.flatten().ok_or(AppError::NotFound)?;
+    Ok((StatusCode::OK, [(header::CONTENT_TYPE, "audio/wav")], bytes))
+}
+
 // ─── PATCH /api/v1/sessions/:id ───────────────────────────────────────────────
 
 pub async fn patch_session(
@@ -210,11 +281,16 @@ pub async fn patch_session(
     Json(body): Json<PatchSession>,
 ) -> Result<Json<Session>> {
     // Verify the session exists first.
-    let existing = sqlx::query_as::<_, Session>("SELECT * FROM sessions WHERE id = ?")
-        .bind(id)
-        .fetch_optional(&pool)
-        .await?
-        .ok_or(AppError::NotFound)?;
+    let existing = sqlx::query_as::<_, Session>(
+        "SELECT id, handheld_session_id, device_id, name, type, created_at,
+                tag_count, handheld_note, farm, operator, comments, synced_at,
+                (note_audio IS NOT NULL) AS has_note_audio
+         FROM sessions WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(&pool)
+    .await?
+    .ok_or(AppError::NotFound)?;
 
     let farm          = body.farm.unwrap_or(existing.farm);
     let operator      = body.operator.unwrap_or(existing.operator);
@@ -225,7 +301,9 @@ pub async fn patch_session(
         "UPDATE sessions
          SET farm = ?, operator = ?, comments = ?, handheld_note = ?
          WHERE id = ?
-         RETURNING *",
+         RETURNING id, handheld_session_id, device_id, name, type, created_at,
+                   tag_count, handheld_note, farm, operator, comments, synced_at,
+                   (note_audio IS NOT NULL) AS has_note_audio",
     )
     .bind(&farm)
     .bind(&operator)

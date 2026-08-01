@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import {
   type DeviceInfo,
   type HeldSession,
@@ -24,7 +25,7 @@ const SESSION_TYPE_INT: Record<string, number> = {
   general: 0, weighing: 1, vaccination: 2, pregnancy: 3, test: 4,
 }
 
-function bleRecordToIncoming(r: SessionRecord): IncomingSessionRecord {
+function bleRecordToIncoming(r: SessionRecord, audioB64?: string | null): IncomingSessionRecord {
   const ts = Math.floor(new Date(r.scanned_at).getTime() / 1000)
   return {
     eid: r.eid,
@@ -36,6 +37,7 @@ function bleRecordToIncoming(r: SessionRecord): IncomingSessionRecord {
     test_name: r.test_name,
     vaccines: r.vaccines,
     note: r.notes,
+    audio_b64: audioB64 ?? undefined,
   }
 }
 
@@ -45,14 +47,62 @@ function bleRecordToIncoming(r: SessionRecord): IncomingSessionRecord {
 
 type SessionSyncState =
   | { status: 'idle' }
-  | { status: 'syncing' }
+  | {
+      status: 'syncing'
+      recordsDone: number
+      recordsTotal: number
+      audioDone: number
+      audioTotal: number
+      currentAudio: { loaded: number; total: number } | null
+    }
   | { status: 'done'; accepted: number; unregistered: UnregState[] }
   | { status: 'error'; message: string }
+
+// Payload of the "audio-progress" event emitted from Rust while a note/tag
+// clip is downloading (see ble_read_session_note_audio / ble_read_tag_audio).
+interface AudioProgressEvent {
+  session_id: number
+  eid: string | null
+  loaded: number
+  total: number
+}
 
 interface UnregState {
   eid: string
   reg: 'pending' | 'registering' | 'done' | 'error'
   error?: string
+}
+
+// ---------------------------------------------------------------------------
+// Signal strength indicator (RSSI, dBm — closer to 0 is stronger)
+// ---------------------------------------------------------------------------
+
+function rssiBars(rssi: number): number {
+  if (rssi >= -60) return 4
+  if (rssi >= -70) return 3
+  if (rssi >= -80) return 2
+  return 1
+}
+
+function SignalIndicator({ rssi }: { rssi: number | null }) {
+  if (rssi == null) {
+    return <span className="text-xs text-slate-300">{'—'}</span>
+  }
+  const bars = rssiBars(rssi)
+  return (
+    <span className="flex items-center gap-1.5" title={`${rssi} dBm`}>
+      <span className="flex items-end gap-0.5 h-3">
+        {[1, 2, 3, 4].map(i => (
+          <span
+            key={i}
+            className={`w-1 rounded-sm ${i <= bars ? 'bg-slate-600' : 'bg-slate-200'}`}
+            style={{ height: `${i * 25}%` }}
+          />
+        ))}
+      </span>
+      <span className="text-xs text-slate-400 font-mono">{rssi} dBm</span>
+    </span>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -231,24 +281,44 @@ export default function SyncPage() {
   // Sync one session
   // ---------------------------------------------------------------------------
   const handleSyncSession = async (session: HeldSession) => {
-    setSync(session.id, { status: 'syncing' })
+    setSync(session.id, {
+      status: 'syncing',
+      recordsDone: 0,
+      recordsTotal: 0,
+      audioDone: 0,
+      audioTotal: 0,
+      currentAudio: null,
+    })
     dlog.log(`──────────────────────────────────────────`)
     dlog.log(`Syncing session ${session.id}: "${session.name}"`)
 
+    // Merges a partial update into this session's 'syncing' state — a no-op
+    // once the session has moved past syncing (done/error), so a stray
+    // late audio-progress event can't resurrect stale progress numbers.
+    const patchProgress = (patch: Partial<Extract<SessionSyncState, { status: 'syncing' }>>) => {
+      setSessionSync(prev => {
+        const cur = prev[session.id]
+        if (!cur || cur.status !== 'syncing') return prev
+        return { ...prev, [session.id]: { ...cur, ...patch } }
+      })
+    }
+
+    let unlistenProgress: (() => void) | null = null
+
     try {
-      // Step 1a — read SESSION_META
-      dlog.log(`  [1/4] Reading SESSION_META for session ${session.id}…`)
-      const meta = await invoke<{ id: number; device_id: string; name: string; session_type: number; created_at: number; tag_count: number; synced: boolean; note: string }>('ble_read_session_meta', {
+      // Step 1 — read SESSION_META
+      dlog.log(`  [1/5] Reading SESSION_META for session ${session.id}…`)
+      const meta = await invoke<{ id: number; device_id: string; name: string; session_type: number; created_at: number; tag_count: number; synced: boolean; note: string; has_note_audio: boolean }>('ble_read_session_meta', {
         sessionId: session.id,
       })
-      dlog.log(`  [1/4] SESSION_META: name="${meta.name}" type=${meta.session_type} device=${meta.device_id}`)
+      dlog.log(`  [1/5] SESSION_META: name="${meta.name}" type=${meta.session_type} device=${meta.device_id}`)
 
-      // Step 1b — read SESSION_DATA records
-      dlog.log(`  [2/4] Reading SESSION_DATA for session ${session.id}…`)
+      // Step 2 — read SESSION_DATA records
+      dlog.log(`  [2/5] Reading SESSION_DATA for session ${session.id}…`)
       const records = await invoke<SessionRecord[]>('ble_read_session_data', {
         sessionId: session.id,
       })
-      dlog.log(`  [2/4] SESSION_DATA received — ${records.length} record(s)`)
+      dlog.log(`  [2/5] SESSION_DATA received — ${records.length} record(s)`)
       records.forEach((r, i) => {
         const parts = [
           `eid=${r.eid}`,
@@ -260,11 +330,57 @@ export default function SyncPage() {
         if (r.pregnancy_result)         parts.push(`preg="${r.pregnancy_result}"`)
         if (r.test_result)              parts.push(`test="${r.test_result}"${r.test_name ? ` (${r.test_name})` : ''}`)
         if (r.notes)                    parts.push(`notes="${r.notes}"`)
+        if (r.has_audio)                parts.push(`audio=yes`)
         dlog.dbg(`    [${i + 1}] ${parts.join('  ')}`)
       })
+      patchProgress({ recordsDone: records.length, recordsTotal: records.length })
 
-      // Step 2 — POST to sessions/sync (persist session + records in DB)
-      dlog.log(`  [3/4] Posting session + ${records.length} records to backend…`)
+      // Step 3 — pull voice notes (bundled into the normal sync flow; skipped
+      // entirely for old handhelds that don't expose the audio characteristics)
+      dlog.log(`  [3/5] Checking audio support…`)
+      const supportsAudio = await invoke<boolean>('ble_supports_audio')
+      const withAudio = supportsAudio ? records.filter(r => r.has_audio) : []
+      const audioTotal = (supportsAudio && meta.has_note_audio ? 1 : 0) + withAudio.length
+      patchProgress({ audioTotal })
+
+      // A single clip can take 100+ seconds over BLE — this listens for the
+      // "audio-progress" events emitted from Rust during the transfer so the
+      // UI can show a live byte-progress bar instead of just sitting idle.
+      if (audioTotal > 0) {
+        unlistenProgress = await listen<AudioProgressEvent>('audio-progress', (event) => {
+          if (event.payload.session_id !== session.id) return
+          patchProgress({ currentAudio: { loaded: event.payload.loaded, total: event.payload.total } })
+        })
+      }
+
+      let audioDone = 0
+      let noteAudioB64: string | null = null
+      if (supportsAudio && meta.has_note_audio) {
+        dlog.log(`  [3/5] Pulling session note audio…`)
+        noteAudioB64 = await invoke<string | null>('ble_read_session_note_audio', {
+          sessionId: session.id,
+        })
+        audioDone += 1
+        patchProgress({ audioDone, currentAudio: null })
+      }
+      const recordAudio: Record<string, string | null> = {}
+      if (supportsAudio) {
+        for (const r of withAudio) {
+          dlog.log(`  [3/5] Pulling audio for tag ${r.eid}…`)
+          recordAudio[r.eid] = await invoke<string | null>('ble_read_tag_audio', {
+            sessionId: session.id,
+            eid: r.eid,
+          })
+          audioDone += 1
+          patchProgress({ audioDone, currentAudio: null })
+        }
+        dlog.log(`  [3/5] Audio: note=${noteAudioB64 ? 'yes' : 'no'}, ${withAudio.length} tag clip(s)`)
+      } else {
+        dlog.log(`  [3/5] Skipping audio — device does not support recording`)
+      }
+
+      // Step 4 — POST to sessions/sync (persist session + records in DB)
+      dlog.log(`  [4/5] Posting session + ${records.length} records to backend…`)
       const incomingSession: IncomingSession = {
         handheld_session_id: meta.id,
         device_id: meta.device_id,
@@ -273,38 +389,39 @@ export default function SyncPage() {
         created_at: meta.created_at,
         tag_count: meta.tag_count,
         note: meta.note,
+        note_audio_b64: noteAudioB64 ?? undefined,
       }
       try {
         const sessResp = await sessionsApi.sync({
           session: incomingSession,
-          records: records.map(bleRecordToIncoming),
+          records: records.map(r => bleRecordToIncoming(r, recordAudio[r.eid])),
         })
-        dlog.log(`  [3/4] sessions/sync OK — db_id=${sessResp.session_id} upserted=${sessResp.upserted_records}`)
+        dlog.log(`  [4/5] sessions/sync OK — db_id=${sessResp.session_id} upserted=${sessResp.upserted_records}`)
       } catch (apiErr) {
-        dlog.err(`  [3/4] sessions/sync failed: ${String(apiErr)}`)
+        dlog.err(`  [4/5] sessions/sync failed: ${String(apiErr)}`)
         throw apiErr
       }
 
-      // Step 3 — also post to legacy scan endpoint (existing unregistered-EID flow)
-      dlog.log(`  [3/4b] Posting to legacy /sync/scans…`)
+      // Step 4b — also post to legacy scan endpoint (existing unregistered-EID flow)
+      dlog.log(`  [4/5b] Posting to legacy /sync/scans…`)
       let resp: SyncResponse
       try {
         resp = await syncApi.postScans(records)
       } catch (apiErr) {
-        dlog.err(`  [3/4b] Backend /sync/scans failed: ${String(apiErr)}`)
+        dlog.err(`  [4/5b] Backend /sync/scans failed: ${String(apiErr)}`)
         throw apiErr
       }
       dlog.log(
-        `  [3/4b] /sync/scans accepted ${resp.accepted} record(s)` +
+        `  [4/5b] /sync/scans accepted ${resp.accepted} record(s)` +
         (resp.unregistered_eids.length > 0
           ? `,  ${resp.unregistered_eids.length} unregistered EID(s): ${resp.unregistered_eids.join(', ')}`
           : '')
       )
 
-      // Step 4 — mark synced on handheld
-      dlog.log(`  [4/4] Marking session ${session.id} as synced on handheld…`)
+      // Step 5 — mark synced on handheld
+      dlog.log(`  [5/5] Marking session ${session.id} as synced on handheld…`)
       await invoke('ble_mark_session_synced', { sessionId: session.id })
-      dlog.log(`  [4/4] Done.`)
+      dlog.log(`  [5/5] Done.`)
       dlog.log(`Session ${session.id} sync complete.`)
 
       // Update synced flag in local list
@@ -335,6 +452,8 @@ export default function SyncPage() {
           setLostConnection(true)
         }
       } catch { /* ignore */ }
+    } finally {
+      unlistenProgress?.()
     }
   }
 
@@ -474,13 +593,16 @@ export default function SyncPage() {
                     <p className="text-sm font-medium text-slate-800">{d.name}</p>
                     <p className="text-xs text-slate-400 font-mono">{d.id}</p>
                   </div>
-                  <button
-                    onClick={() => handleConnect(d)}
-                    disabled={connecting !== null}
-                    className="px-3 py-1.5 text-xs rounded-lg bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50"
-                  >
-                    {connecting === d.id ? t('sync.connecting') : t('sync.connect')}
-                  </button>
+                  <div className="flex items-center gap-4">
+                    <SignalIndicator rssi={d.rssi} />
+                    <button
+                      onClick={() => handleConnect(d)}
+                      disabled={connecting !== null}
+                      className="px-3 py-1.5 text-xs rounded-lg bg-slate-800 text-white hover:bg-slate-700 disabled:opacity-50"
+                    >
+                      {connecting === d.id ? t('sync.connecting') : t('sync.connect')}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -621,6 +743,41 @@ function SessionCard({ session, syncState, onSync, onDelete, onRegisterTag, onRe
           ) : null}
         </div>
       </div>
+
+      {/* Sync progress */}
+      {isSyncing && (() => {
+        const s = syncState as Extract<SessionSyncState, { status: 'syncing' }>
+        const pct = s.currentAudio && s.currentAudio.total > 0
+          ? Math.min(100, Math.round((s.currentAudio.loaded / s.currentAudio.total) * 100))
+          : 0
+        const fmtKb = (n: number) => `${(n / 1024).toFixed(1)} KB`
+        return (
+          <div className="px-4 pb-3 space-y-2">
+            <div className="flex items-center gap-4 text-xs text-slate-500">
+              {s.recordsTotal > 0 && (
+                <span>{t('sync.progress_tags')}: {s.recordsDone}/{s.recordsTotal}</span>
+              )}
+              {s.audioTotal > 0 && (
+                <span>{t('sync.progress_recordings')}: {s.audioDone}/{s.audioTotal}</span>
+              )}
+            </div>
+            {s.currentAudio && (
+              <div>
+                <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                  <span>{t('sync.downloading_recording')}</span>
+                  <span>{fmtKb(s.currentAudio.loaded)} / {fmtKb(s.currentAudio.total)} ({pct}%)</span>
+                </div>
+                <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                  <div
+                    className="h-full bg-blue-600 rounded-full transition-all duration-150"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Error */}
       {isError && (

@@ -346,6 +346,7 @@ pub struct Session {
     pub operator: String,
     pub comments: String,
     pub synced_at: String,
+    pub has_note_audio: bool,
 }
 
 /// Session row + computed record_count for list responses.
@@ -364,6 +365,7 @@ pub struct SessionSummary {
     pub operator: String,
     pub comments: String,
     pub synced_at: String,
+    pub has_note_audio: bool,
     pub record_count: i64,
 }
 
@@ -376,6 +378,7 @@ pub struct SessionRecord {
     pub scanned_at: String,
     pub event_data: String,  // JSON blob
     pub note: String,
+    pub has_audio: bool,
     // Joined from tags/animals — indicates registration state.
     pub tag_registered: bool,  // true if EID exists in tags table
     pub animal_id: Option<i64>, // set if an active animal is linked to the tag
@@ -403,6 +406,11 @@ pub struct IncomingSession {
     pub tag_count: i64,
     #[serde(default)]
     pub note: String,       // handheld session note
+    /// Base64-encoded WAV bytes for the session-level voice note, pulled
+    /// from AUDIO_INFO/AUDIO_DATA over BLE. Absent for old handhelds (no
+    /// recording hardware) or when the frontend has nothing new to send.
+    #[serde(default)]
+    pub note_audio_b64: Option<String>,
 }
 
 /// One tag record as sent by the frontend after reading SESSION_DATA pages from BLE.
@@ -420,6 +428,9 @@ pub struct IncomingSessionRecord {
     pub vaccines: Option<String>,
     #[serde(default)]
     pub note: String,
+    /// Base64-encoded WAV bytes for this tag's voice note. See note_audio_b64.
+    #[serde(default)]
+    pub audio_b64: Option<String>,
 }
 
 /// Full sync body: one session + all its records.

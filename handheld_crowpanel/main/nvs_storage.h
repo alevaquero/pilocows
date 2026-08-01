@@ -3,31 +3,22 @@
 
 #include "esp_err.h"
 #include <stdbool.h>
+#include <stdint.h>
+
+#define DEFAULT_SPEAKER_VOLUME 80
 
 typedef struct {
     char language[3];
     bool buzzer_enabled;
     bool vibrator_enabled;
+    uint8_t speaker_volume; // 0-100; added after buzzer/vibrator, keep last —
+                             // nvs_load_settings() pre-fills a default before
+                             // reading, so old (smaller) saved blobs migrate
+                             // cleanly instead of leaving this uninitialized.
 } AppSettings;
-
-typedef struct {
-    char eid[16];           // 11-digit EID + null terminator
-    uint32_t timestamp;     // Unix timestamp
-} ScanRecord;
-
-typedef struct {
-    ScanRecord scans[100];  // Max 100 scans in memory
-    uint16_t count;
-} ScanList;
 
 // Settings
 esp_err_t nvs_load_settings(AppSettings *settings);
 esp_err_t nvs_save_settings(const AppSettings *settings);
-
-// Scan list
-esp_err_t nvs_load_scans(ScanList *scan_list);
-esp_err_t nvs_save_scans(const ScanList *scan_list);
-esp_err_t nvs_add_scan(const char *eid);
-esp_err_t nvs_clear_scans(void);
 
 #endif

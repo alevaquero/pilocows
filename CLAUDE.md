@@ -37,8 +37,8 @@ pilocows/
 - **Display**: RGB parallel 16-bit, 800×480, IPS, 25 MHz pixel clock
 - **Touch**: GT911 (capacitive, 5-point), I2C
 - **Memory**: 16 MB Flash, 32 MB PSRAM
-- **RFID reader**: (TBD — same as SC01 Plus, UART pins TBD)
-- **Status**: Phase 1 MVP (display + touch drivers, demo UI)
+- **RFID reader**: 134.2K AGV FDX-B ISO11784/85 TTL UART module (UART1, RX=GPIO26, receive-only)
+- **Status**: Phase 2 (SD storage, audio notes, BLE sync in progress)
 
 ### frontend/
 - **Shell**: Tauri 2.x
@@ -160,21 +160,72 @@ Pixel clock: 25 MHz. Refresh ~42 Hz @ 800×480 16-bit RGB565.
 | LDO4 | 3.3V    | I/O rail (touch, display control) |
 
 #### Backlight & Audio
-- **Backlight**: Controlled by STC8H1KXX management MCU (Phase 1: no GPIO control)
-- **Audio**: I2S amplifier + onboard speaker jack (Phase 2+)
+- **Backlight**: Controlled by STC8H1KXX management MCU (`peripheral/bsp_stc8h1kxx`, I2C)
+- **Audio**: I2S speaker + mic implemented, see pin tables below
 - **Camera**: MIPI CSI (not used for pilocows)
 
-#### Connectivity Module (Phase 2+)
-- **ESP32-C6-MINI-1**: WiFi/BLE via SDIO interface (GPIO 49-54)
-- **Requires**: ESP_HOSTED framework + C6 firmware
-- **Defer**: To Phase 2+
+#### Connectivity Module — ESP32-C6-MINI-1 (WiFi/BLE via SDIO, through ESP-HOSTED)
+| Signal            | GPIO |
+|-------------------|------|
+| SDIO CMD          | 54   |
+| SDIO CLK          | 53   |
+| SDIO D0           | 52   |
+| SDIO D1           | 51   |
+| SDIO D2           | 50   |
+| SDIO D3           | 49   |
+| C6 RESET          | 20   |
+
+The C6 handles WiFi/BLE radio; NimBLE on the P4 talks to it over this SDIO
+link via ESP-HOSTED. **GPIO 20 and 49-54 are reserved for this link — never
+reassign them.** Toggling/resetting GPIO 20 resets the C6 module outright.
+
+#### SD Card (SDMMC, 1-bit mode, `peripheral/bsp_sd`)
+| Signal | GPIO |
+|--------|------|
+| CLK    | 43   |
+| CMD    | 44   |
+| D0     | 39   |
+
+ESP32-P4 SDMMC slot 0's D0-D3 are dedicated (non-GPIO-matrix) pins — the
+driver rejects `GPIO_NUM_NC` for the unused D1-D3, so `SDMMC_SLOT_CONFIG_DEFAULT()`
+silently pre-fills them with this board's defaults (GPIO 40/41/42 — display
+HSYNC/VSYNC + touch INT). A failed mount's cleanup path resets those three
+pins to floating inputs, so `sd_init()` must run before display/I2C/touch
+are ever brought up (see `main.c` `app_main()` ordering and `bsp_sd.c`).
+
+#### Speaker (I2S, `peripheral/bsp_audio`)
+| Signal | GPIO |
+|--------|------|
+| LRCLK  | 21   |
+| BCLK   | 22   |
+| SDATA  | 23   |
+
+#### Microphone (I2S, `peripheral/bsp_mic`)
+| Signal | GPIO |
+|--------|------|
+| CLK    | 24   |
+| DIN    | 25   |
+
+#### RFID Reader (UART1, receive-only)
+| Signal | GPIO |
+|--------|------|
+| RX     | 26   |
+
+#### Buttons (`button_driver.c`)
+| Function | GPIO |
+|----------|------|
+| UP       | 48   |
+| DOWN     | 31   |
+| SELECT   | 32   |
+
+#### Buzzer & Vibrator (LEDC/PWM, `feedback_driver.c`)
+| Function | GPIO |
+|----------|------|
+| Buzzer   | 47   |
+| Vibrator | 30   |
 
 #### TBD (Requires Hardware Inspection)
-- RFID UART pins (not in factory examples)
-- Button GPIO mappings
-- Buzzer/vibrator GPIO
 - RTC (DS3231 I2C address)
-- SD card (if exposed on CrowPanel)
 
 ## System Architecture
 

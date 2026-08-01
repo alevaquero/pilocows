@@ -1,6 +1,6 @@
 [package]
 name = "pilocows-backend"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2021"
 
 [[bin]]
@@ -20,3 +20,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 dotenvy       = "0.15"
 anyhow        = "1"
 chrono        = { version = "0.4", features = ["clock"] }
+base64        = "0.22"

@@ -39,6 +39,11 @@ esp_err_t touch_init(void)
         .scl_speed_hz = 400000,
     };
     esp_lcd_touch_config_t tp_cfg = {
+        // NOTE: these must stay the raw/physical sensor range (H_size x V_size,
+        // still 800x480 - the touch glass didn't change), NOT the logical
+        // LV_H_RES/LV_V_RES. esp_lcd_touch's mirror math is `x = x_max - x`
+        // applied to the RAW reading before swap_xy runs, so x_max/y_max have
+        // to match what the GT911 actually reports, not what LVGL expects.
         .x_max = H_size,
         .y_max = V_size,
         .rst_gpio_num = TOUCH_GPIO_RST,
@@ -48,9 +53,11 @@ esp_err_t touch_init(void)
             .interrupt = 0,
         },
         .flags = {
-            .swap_xy = false,
+            // Must track the display's rotation.swap_xy/mirror_y below so touch
+            // points land on the same logical coordinates LVGL is drawing to.
+            .swap_xy = DISPLAY_ROTATE_90,
             .mirror_x = false,
-            .mirror_y = false,
+            .mirror_y = DISPLAY_ROTATE_90,
         },
     };
     err = esp_lcd_new_panel_io_i2c((i2c_master_bus_handle_t)i2c_bus_handle, &io_config, &tp_io_handle);
@@ -226,18 +233,24 @@ static esp_err_t lvgl_init()
         // .io_handle = mipi_dbi_io,
         .panel_handle = panel_handle,
         .control_handle = panel_handle,
-        .buffer_size = (H_size * V_size),
+        .buffer_size = (LV_H_RES * LV_V_RES),
         .double_buffer = false,
-        .hres = H_size,
-        .vres = V_size,
+        .hres = LV_H_RES,
+        .vres = LV_V_RES,
         .monochrome = false,
 #if LVGL_VERSION_MAJOR >= 9
         .color_format = LV_COLOR_FORMAT_RGB565,
 #endif
+        // swap_xy+mirror_y is the esp_lvgl_port convention for a 90-degree
+        // rotation; the esp_lcd RGB panel driver remaps pixels into the fixed
+        // 800x480 physical scan buffer during flush, so no LVGL sw_rotate is
+        // needed. Can't be verified without the physical unit in hand - if the
+        // image comes up upside-down or mirrored, swap mirror_y <-> mirror_x
+        // here and in touch_init()'s tp_cfg.flags above.
         .rotation = {
-            .swap_xy = false,
+            .swap_xy = DISPLAY_ROTATE_90,
             .mirror_x = false,
-            .mirror_y = false,
+            .mirror_y = DISPLAY_ROTATE_90,
         },
         .flags = {
             .buff_dma = true,

@@ -95,6 +95,14 @@ pub fn router(pool: SqlitePool) -> Router {
                 .patch(sessions::patch_session)
                 .delete(sessions::delete_session),
         )
+        .route(
+            "/api/v1/sessions/:id/audio",
+            get(sessions::get_session_note_audio),
+        )
+        .route(
+            "/api/v1/sessions/:id/records/:eid/audio",
+            get(sessions::get_record_audio),
+        )
         // Reports
         .route("/api/v1/reports/herd", get(reports::herd_report))
         // Backup / Restore

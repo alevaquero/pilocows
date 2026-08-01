@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -10,6 +10,7 @@ import {
   sessionTypeKey,
   formatEventData,
 } from '../api/sessions'
+import { BASE } from '../api/client'
 import { animalsApi, BREEDS, CATEGORIES } from '../api/animals'
 import { tagsApi, type Tag } from '../api/tags'
 import Modal, { Field, inputCls } from '../components/Modal'
@@ -271,6 +272,42 @@ function DeleteConfirmModal({ onClose, onConfirm }: { onClose: () => void; onCon
   )
 }
 
+// ── Voice note play button (native <audio>, fetched lazily via src) ───────────
+
+function AudioPlayButton({ src, onRowClick }: { src: string; onRowClick?: boolean }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [playing, setPlaying] = useState(false)
+
+  const toggle = (e: React.MouseEvent) => {
+    if (onRowClick) e.stopPropagation() // don't trigger the row's onClick navigation
+    const audio = audioRef.current
+    if (!audio) return
+    if (playing) audio.pause()
+    else audio.play().catch(() => {})
+  }
+
+  return (
+    <>
+      <button
+        onClick={toggle}
+        className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 shrink-0"
+        title={playing ? 'Pause' : 'Play'}
+      >
+        {playing ? '⏸' : '▶'}
+      </button>
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="none"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => setPlaying(false)}
+        className="hidden"
+      />
+    </>
+  )
+}
+
 // ── Sort / filter types ───────────────────────────────────────────────────────
 
 type ColKey = 'eid' | 'registered' | 'scanned_at' | 'event_summary' | 'note'
@@ -331,10 +368,12 @@ function RegistrationBadge({ record }: { record: DbSessionRecord }) {
 
 function RecordRow({
   record,
+  sessionId,
   eventSummary,
   onClick,
 }: {
   record: DbSessionRecord
+  sessionId: number
   eventSummary: string
   onClick: () => void
 }) {
@@ -349,8 +388,16 @@ function RecordRow({
       <td className="px-4 py-2.5"><RegistrationBadge record={record} /></td>
       <td className="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">{time}</td>
       <td className="px-4 py-2.5 text-sm text-slate-700">{eventSummary || '—'}</td>
-      <td className="px-4 py-2.5 text-xs text-slate-400 max-w-[160px] truncate" title={record.note}>
-        {record.note || ''}
+      <td className="px-4 py-2.5 text-xs text-slate-400 max-w-[160px]">
+        <div className="flex items-center gap-1.5">
+          {record.has_audio && (
+            <AudioPlayButton
+              src={`${BASE}/sessions/${sessionId}/records/${encodeURIComponent(record.eid)}/audio`}
+              onRowClick
+            />
+          )}
+          <span className="truncate" title={record.note}>{record.note || ''}</span>
+        </div>
       </td>
     </tr>
   )
@@ -510,6 +557,14 @@ export default function SessionDetailPage() {
         {session.handheld_note && (
           <MetaCard label={t('sessions.handheld_note')} value={session.handheld_note} wide />
         )}
+        {session.has_note_audio && (
+          <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 flex items-center gap-2">
+            <div>
+              <p className="text-xs text-slate-400 mb-0.5">{t('sessions.voice_note')}</p>
+              <AudioPlayButton src={`${BASE}/sessions/${session.id}/audio`} />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Records table */}
@@ -567,6 +622,7 @@ export default function SessionDetailPage() {
                 <RecordRow
                   key={r.id}
                   record={r}
+                  sessionId={session.id}
                   eventSummary={formatEventData(r.event_data, session.session_type, t)}
                   onClick={() => handleRowClick(r)}
                 />

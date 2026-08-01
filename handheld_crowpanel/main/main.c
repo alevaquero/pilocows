@@ -1,323 +1,222 @@
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
+#include <inttypes.h>
 #include "esp_log.h"
 #include "esp_ldo_regulator.h"
+#include "esp_system.h"
+#include "esp_heap_caps.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
+#include "esp_lvgl_port.h"
 #include "bsp_i2c.h"
 #include "bsp_display.h"
-#include "lvgl.h"
+#include "nvs_flash.h"
+#include "i18n.h"
+#include "session_storage.h"
+#include "ui_manager.h"
+#include "screen_scan.h"
+#include "button_driver.h"
+#include "feedback_driver.h"
+#include "rfid_driver.h"
 #include "nvs_storage.h"
 #include "ble_gatt_server.h"
+#include "wifi_manager.h"
+#include "ota_server.h"
+#include "soft_rtc.h"
+#include "app_version.h"
+#include "bsp_stc8h1kxx.h"
+#include "bsp_sd.h"
+#include "bsp_mic.h"
+#include "app_fonts.h"
 
 static const char *TAG = "main";
 
-static AppSettings settings;
-static ScanList scan_list;
+// ---------------------------------------------------------------------------
+// SD card required — shows a full-screen error and halts boot if the card
+// isn't detected. Never returns.
+//
+// Diagnostic build: lvgl_port_lock(0) (wait-forever) has been observed to
+// never return after a failed sd_init() — across every prior test run, the
+// "lvgl_port_lock -> %d" log line never printed at all, meaning the LOCK
+// ITSELF hangs, not just the rendering. Using a bounded timeout + per-step
+// logging here so the next run tells us exactly where it gets stuck, instead
+// of "somewhere after HALT".
+// ---------------------------------------------------------------------------
+static void show_sd_error_and_halt(void) {
+    ESP_LOGE(TAG, "HALT: SD card not detected — insert a card and restart the device");
 
-enum AppScreen {
-    SCREEN_DEMO,
-    SCREEN_SETTINGS,
-    SCREEN_SCANS
-};
+    while (1) {
+        ESP_LOGI(TAG, "Attempting lvgl_port_lock (2s timeout)...");
+        bool locked = lvgl_port_lock(2000);
+        ESP_LOGI(TAG, "lvgl_port_lock -> %d", (int)locked);
 
-static enum AppScreen current_screen = SCREEN_DEMO;
-static int tap_count = 0;
-static lv_obj_t *counter_label = NULL;
+        if (locked) {
+            ESP_LOGI(TAG, "Creating error screen...");
+            lv_obj_t *scr = lv_obj_create(NULL);
+            ESP_LOGI(TAG, "lv_obj_create -> %p", (void *)scr);
+            lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_set_style_bg_color(scr, lv_color_hex(0xC0392B), LV_PART_MAIN);
+            lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, LV_PART_MAIN);
 
-// ===== I18N Strings =====
-typedef struct {
-    const char *lang_en;
-    const char *lang_es;
-} I18nString;
+            lv_obj_t *lbl = lv_label_create(scr);
+            ESP_LOGI(TAG, "lv_label_create -> %p", (void *)lbl);
+            lv_label_set_text(lbl, "SD card not detected.\n\nInsert a card and restart the device.");
+            lv_obj_set_style_text_font(lbl, &lv_font_app_30, LV_PART_MAIN);
+            lv_obj_set_style_text_color(lbl, lv_color_white(), LV_PART_MAIN);
+            lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+            lv_label_set_long_mode(lbl, LV_LABEL_LONG_WRAP);
+            lv_obj_set_width(lbl, 420);
+            lv_obj_center(lbl);
 
-#define STR(id) (strcmp(settings.language, "es") == 0 ? strings[id].lang_es : strings[id].lang_en)
+            ESP_LOGI(TAG, "Calling lv_scr_load...");
+            lv_scr_load(scr);
+            ESP_LOGI(TAG, "SD error screen loaded (scr=%p, active=%p)", (void *)scr, (void *)lv_scr_act());
 
-enum {
-    STR_TITLE,
-    STR_TAP_COUNTER,
-    STR_SETTINGS,
-    STR_LANGUAGE,
-    STR_BUZZER,
-    STR_VIBRATOR,
-    STR_BACK,
-    STR_ENABLED,
-    STR_DISABLED,
-};
-
-static I18nString strings[] = {
-    {.lang_en = "Pilocows", .lang_es = "Pilocows"},
-    {.lang_en = "Tap to count", .lang_es = "Toca para contar"},
-    {.lang_en = "Settings", .lang_es = "Configuracion"},
-    {.lang_en = "Language:", .lang_es = "Idioma:"},
-    {.lang_en = "Buzzer:", .lang_es = "Zumbador:"},
-    {.lang_en = "Vibrator:", .lang_es = "Vibrador:"},
-    {.lang_en = "< Back", .lang_es = "< Atras"},
-    {.lang_en = "ON", .lang_es = "ON"},
-    {.lang_en = "OFF", .lang_es = "OFF"},
-};
-
-// ===== Forward declarations =====
-static void show_demo_screen(void);
-static void show_settings_screen(void);
-static void show_scan_screen(void);
-
-// ===== Tap area handlers =====
-static void on_counter_tap(lv_event_t *e) {
-    if (current_screen != SCREEN_DEMO) return;
-    tap_count++;
-    char buf[64];
-    snprintf(buf, sizeof(buf), "%s\n%d", STR(STR_TAP_COUNTER), tap_count);
-    lv_label_set_text(counter_label, buf);
-    ESP_LOGI(TAG, "Tap count: %d", tap_count);
-}
-
-static void on_settings_tap(lv_event_t *e) {
-    if (current_screen == SCREEN_DEMO) {
-        show_settings_screen();
-    }
-}
-
-static void on_language_tap(lv_event_t *e) {
-    if (current_screen != SCREEN_SETTINGS) return;
-    if (strcmp(settings.language, "en") == 0) {
-        strcpy(settings.language, "es");
-    } else {
-        strcpy(settings.language, "en");
-    }
-    nvs_save_settings(&settings);
-    show_settings_screen();
-}
-
-static void on_buzzer_tap(lv_event_t *e) {
-    if (current_screen != SCREEN_SETTINGS) return;
-    settings.buzzer_enabled = !settings.buzzer_enabled;
-    nvs_save_settings(&settings);
-    show_settings_screen();
-}
-
-static void on_vibrator_tap(lv_event_t *e) {
-    if (current_screen != SCREEN_SETTINGS) return;
-    settings.vibrator_enabled = !settings.vibrator_enabled;
-    nvs_save_settings(&settings);
-    show_settings_screen();
-}
-
-static void on_clear_scans_tap(lv_event_t *e) {
-    if (current_screen != SCREEN_SETTINGS) return;
-    nvs_clear_scans();
-    scan_list.count = 0;
-    show_settings_screen();
-}
-
-static void on_back_tap(lv_event_t *e) {
-    if (current_screen == SCREEN_SETTINGS || current_screen == SCREEN_SCANS) {
-        show_demo_screen();
-    }
-}
-
-static void on_scans_tap(lv_event_t *e) {
-    if (current_screen == SCREEN_DEMO) {
-        show_scan_screen();
-    }
-}
-
-// ===== Screen creation =====
-static void show_demo_screen(void) {
-    current_screen = SCREEN_DEMO;
-    lv_obj_clean(lv_scr_act());
-
-    // Background
-    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_white(), 0);
-
-    // Title
-    lv_obj_t *title = lv_label_create(lv_scr_act());
-    lv_label_set_text(title, STR(STR_TITLE));
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 30);
-
-    // Counter label (large tappable area)
-    counter_label = lv_label_create(lv_scr_act());
-    char buf[64];
-    snprintf(buf, sizeof(buf), "%s\n%d", STR(STR_TAP_COUNTER), tap_count);
-    lv_label_set_text(counter_label, buf);
-    lv_obj_center(counter_label);
-    lv_obj_add_flag(counter_label, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(counter_label, on_counter_tap, LV_EVENT_CLICKED, NULL);
-
-    // Scan count info (tappable to view scans)
-    lv_obj_t *scan_info = lv_label_create(lv_scr_act());
-    char scan_buf[32];
-    snprintf(scan_buf, sizeof(scan_buf), "Scans: %d", scan_list.count);
-    lv_label_set_text(scan_info, scan_buf);
-    lv_obj_align(scan_info, LV_ALIGN_BOTTOM_LEFT, 10, -20);
-    lv_obj_add_flag(scan_info, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(scan_info, on_scans_tap, LV_EVENT_CLICKED, NULL);
-
-    // Settings label (bottom right, tappable)
-    lv_obj_t *settings_label = lv_label_create(lv_scr_act());
-    lv_label_set_text(settings_label, STR(STR_SETTINGS));
-    lv_obj_align(settings_label, LV_ALIGN_BOTTOM_RIGHT, -10, -20);
-    lv_obj_add_flag(settings_label, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(settings_label, on_settings_tap, LV_EVENT_CLICKED, NULL);
-}
-
-static void show_settings_screen(void) {
-    current_screen = SCREEN_SETTINGS;
-    lv_obj_clean(lv_scr_act());
-
-    // Background
-    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_white(), 0);
-
-    // Title
-    lv_obj_t *title = lv_label_create(lv_scr_act());
-    lv_label_set_text(title, STR(STR_SETTINGS));
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
-
-    int y_pos = 50;
-    int item_height = 45;
-
-    // Language
-    lv_obj_t *lang_container = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(lang_container, 300, 40);
-    lv_obj_set_pos(lang_container, 10, y_pos);
-    lv_obj_set_style_bg_color(lang_container, lv_color_hex(0xf0f0f0), 0);
-    lv_obj_add_flag(lang_container, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(lang_container, on_language_tap, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *lang_text = lv_label_create(lang_container);
-    char lang_buf[64];
-    snprintf(lang_buf, sizeof(lang_buf), "%s %s", STR(STR_LANGUAGE),
-             strcmp(settings.language, "es") == 0 ? "ES" : "EN");
-    lv_label_set_text(lang_text, lang_buf);
-    lv_obj_center(lang_text);
-
-    y_pos += item_height;
-
-    // Buzzer
-    lv_obj_t *buzzer_container = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(buzzer_container, 300, 40);
-    lv_obj_set_pos(buzzer_container, 10, y_pos);
-    lv_obj_set_style_bg_color(buzzer_container, lv_color_hex(0xf0f0f0), 0);
-    lv_obj_add_flag(buzzer_container, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(buzzer_container, on_buzzer_tap, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *buzzer_text = lv_label_create(buzzer_container);
-    char buzzer_buf[64];
-    snprintf(buzzer_buf, sizeof(buzzer_buf), "%s %s", STR(STR_BUZZER),
-             settings.buzzer_enabled ? STR(STR_ENABLED) : STR(STR_DISABLED));
-    lv_label_set_text(buzzer_text, buzzer_buf);
-    lv_obj_center(buzzer_text);
-
-    y_pos += item_height;
-
-    // Vibrator
-    lv_obj_t *vib_container = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(vib_container, 300, 40);
-    lv_obj_set_pos(vib_container, 10, y_pos);
-    lv_obj_set_style_bg_color(vib_container, lv_color_hex(0xf0f0f0), 0);
-    lv_obj_add_flag(vib_container, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(vib_container, on_vibrator_tap, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *vib_text = lv_label_create(vib_container);
-    char vib_buf[64];
-    snprintf(vib_buf, sizeof(vib_buf), "%s %s", STR(STR_VIBRATOR),
-             settings.vibrator_enabled ? STR(STR_ENABLED) : STR(STR_DISABLED));
-    lv_label_set_text(vib_text, vib_buf);
-    lv_obj_center(vib_text);
-
-    y_pos += item_height;
-
-    // Clear scans button
-    lv_obj_t *clear_container = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(clear_container, 300, 40);
-    lv_obj_set_pos(clear_container, 10, y_pos);
-    lv_obj_set_style_bg_color(clear_container, lv_color_hex(0xff6b6b), 0);
-    lv_obj_add_flag(clear_container, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(clear_container, on_clear_scans_tap, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *clear_text = lv_label_create(clear_container);
-    char clear_buf[64];
-    snprintf(clear_buf, sizeof(clear_buf), "Clear Scans (%d)", scan_list.count);
-    lv_label_set_text(clear_text, clear_buf);
-    lv_obj_center(clear_text);
-
-    // Back button
-    lv_obj_t *back_label = lv_label_create(lv_scr_act());
-    lv_label_set_text(back_label, STR(STR_BACK));
-    lv_obj_align(back_label, LV_ALIGN_BOTTOM_MID, 0, -20);
-    lv_obj_add_flag(back_label, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(back_label, on_back_tap, LV_EVENT_CLICKED, NULL);
-}
-
-static void show_scan_screen(void) {
-    current_screen = SCREEN_SCANS;
-    lv_obj_clean(lv_scr_act());
-
-    // Background
-    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_white(), 0);
-
-    // Title
-    lv_obj_t *title = lv_label_create(lv_scr_act());
-    char title_buf[64];
-    snprintf(title_buf, sizeof(title_buf), "Scans: %d", scan_list.count);
-    lv_label_set_text(title, title_buf);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
-
-    // Scan list container with scroll
-    lv_obj_t *list_container = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(list_container, 320, 380);
-    lv_obj_set_pos(list_container, 0, 40);
-    lv_obj_set_style_bg_color(list_container, lv_color_white(), 0);
-    lv_obj_set_style_border_width(list_container, 1, 0);
-    lv_obj_set_scroll_dir(list_container, LV_DIR_VER);
-
-    if (scan_list.count == 0) {
-        lv_obj_t *empty_label = lv_label_create(list_container);
-        lv_label_set_text(empty_label, "No scans yet");
-        lv_obj_center(empty_label);
-    } else {
-        // Display scans (show last 10 to avoid clutter)
-        int start_idx = scan_list.count > 10 ? scan_list.count - 10 : 0;
-        int y_offset = 0;
-
-        for (int i = start_idx; i < scan_list.count; i++) {
-            lv_obj_t *scan_item = lv_obj_create(list_container);
-            lv_obj_set_size(scan_item, 300, 45);
-            lv_obj_set_pos(scan_item, 5, y_offset);
-            lv_obj_set_style_bg_color(scan_item, lv_color_hex(0xf5f5f5), 0);
-            lv_obj_set_style_border_width(scan_item, 0, 0);
-            lv_obj_set_style_pad_all(scan_item, 5, 0);
-
-            char scan_text[64];
-            snprintf(scan_text, sizeof(scan_text), "EID: %s", scan_list.scans[i].eid);
-
-            lv_obj_t *eid_label = lv_label_create(scan_item);
-            lv_label_set_text(eid_label, scan_text);
-            lv_obj_set_width(eid_label, 290);
-            lv_label_set_long_mode(eid_label, LV_LABEL_LONG_WRAP);
-            lv_obj_center(eid_label);
-
-            y_offset += 50;
+            lvgl_port_unlock();
+            ESP_LOGI(TAG, "lvgl_port_unlock done");
+            break; // screen is up — stop retrying the lock, fall through to the blight retry loop
         }
 
-        // Scroll to bottom to show latest scans
-        lv_obj_scroll_to_view_recursive(list_container, LV_ANIM_OFF);
+        ESP_LOGW(TAG, "lvgl_port_lock timed out — retrying");
     }
 
-    // Back button
-    lv_obj_t *back_label = lv_label_create(lv_scr_act());
-    lv_label_set_text(back_label, STR(STR_BACK));
-    lv_obj_align(back_label, LV_ALIGN_BOTTOM_MID, 0, -20);
-    lv_obj_add_flag(back_label, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(back_label, on_back_tap, LV_EVENT_CLICKED, NULL);
+    // The STC8H1KXX management MCU (backlight over I2C) isn't reliably ready
+    // to accept writes this early in boot — normally set_lcd_blight() isn't
+    // called until several seconds later, after the rest of app_main() runs.
+    // Its return value can't be trusted to detect failure (it reports OK
+    // even when the underlying I2C write fails), so just keep retrying
+    // forever instead — harmless, and self-heals once the chip is ready.
+    while (1) {
+        set_lcd_blight(100);
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
 }
 
-// ===== Main app =====
-void app_main(void)
-{
+// Queue for passing RFID scans from the RFID task to the main task.
+static QueueHandle_t s_scan_queue = NULL;
+
+// EID of the tag currently displayed on the scan screen (pending save).
+static char s_prev_eid[SESSION_EID_MAX + 1] = {0};
+
+// ---------------------------------------------------------------------------
+// RFID tag callback — called from the RFID task
+// ---------------------------------------------------------------------------
+static void on_tag_read(const RfidScan *scan) {
+    ESP_LOGI(TAG, "on_tag_read: queueing %s", scan->eid);
+    BaseType_t sent = xQueueSend(s_scan_queue, scan, 0);
+    if (sent != pdTRUE) {
+        ESP_LOGW(TAG, "scan queue full - tag dropped");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Button callback — called from the button driver task
+// ---------------------------------------------------------------------------
+static void on_button_event(button_id_t button, int pressed) {
+    if (!pressed) return;
+    ESP_LOGI(TAG, "Button pressed: %d", button);
+    // RFID scanning is continuous (WL-134 reads automatically); no button
+    // action is wired to it, matching the original handheld's SCAN button
+    // (which was likewise a no-op — the reader triggers on its own).
+}
+
+// ---------------------------------------------------------------------------
+// BLE command callback — called from the BLE host task (once ESP-HOSTED is wired)
+// ---------------------------------------------------------------------------
+static void on_ble_command(ble_command_t cmd, const char *payload) {
+    switch (cmd) {
+    case BLE_CMD_SET_TIME:
+        if (payload) {
+            struct tm tm = {0};
+            strptime(payload, "%Y-%m-%dT%H:%M:%SZ", &tm);
+            time_t t = mktime(&tm);
+            soft_rtc_set_time(t);
+            ESP_LOGI(TAG, "Time set to: %s", payload);
+        }
+        break;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Main task — session-aware scan processing
+//
+// Flow for each received tag:
+//   1. Auto-save the previously shown tag (if any) to session storage.
+//   2. Check whether this EID already exists in the active session.
+//   3. Show the tag on screen (green=new, red=duplicate; pre-fills fields if duplicate).
+//   4. Feedback: success beep/vibrate for new, duplicate beep/vibrate for re-scan.
+//   5. Track the new EID as the current pending tag.
+//   6. Notify BLE of the updated scan count.
+//
+// If no session is active: display only, no storage writes, success feedback.
+// ---------------------------------------------------------------------------
+static void main_task(void *arg) {
+    (void)arg;
+    ESP_LOGI(TAG, "main_task started");
+    RfidScan scan;
+
+    while (true) {
+        if (xQueueReceive(s_scan_queue, &scan, pdMS_TO_TICKS(100)) != pdTRUE) continue;
+
+        const char *eid = scan.eid;
+        bool has_session = false;
+        {
+            session_meta_t m;
+            has_session = session_get_active(&m);
+        }
+
+        // 1. Auto-save previous pending tag
+        if (s_prev_eid[0] != '\0' && has_session) {
+            lvgl_port_lock(0);
+            tag_record_t prev_rec;
+            bool got = screen_scan_get_record(&prev_rec);
+            lvgl_port_unlock();
+
+            if (got) {
+                session_add_tag(&prev_rec);
+                uint32_t count = session_get_tag_count();
+                lvgl_port_lock(0);
+                screen_scan_update_count(count);
+                lvgl_port_unlock();
+                ESP_LOGI(TAG, "Auto-saved %s", s_prev_eid);
+            }
+        }
+
+        // 2. Duplicate check
+        bool duplicate = has_session && session_get_tag(eid, NULL);
+
+        // 3. Show tag on screen
+        lvgl_port_lock(0);
+        screen_scan_show_tag(eid, duplicate);
+        lvgl_port_unlock();
+
+        // 4. Audio / haptic feedback
+        if (duplicate) {
+            ESP_LOGI(TAG, "Duplicate: %s", eid);
+            buzzer_duplicate();
+            vibrator_duplicate();
+        } else {
+            ESP_LOGI(TAG, "New tag: %s", eid);
+            buzzer_success();
+            vibrator_success();
+        }
+
+        // 5. Track as pending
+        strncpy(s_prev_eid, eid, sizeof(s_prev_eid) - 1);
+        s_prev_eid[sizeof(s_prev_eid) - 1] = '\0';
+
+        // 6. BLE status update (desktop pulls this via DEVICE_STATUS on demand)
+        uint32_t count = session_get_tag_count();
+        ble_gatt_server_update_status(count, FIRMWARE_VERSION);
+    }
+}
+
+void app_main(void) {
     ESP_LOGI(TAG, "========== Pilocows Handheld CrowPanel ==========");
-    ESP_LOGI(TAG, "Firmware version: 0.1.0-alpha");
+    ESP_LOGI(TAG, "Firmware version: %s", FIRMWARE_VERSION);
 
     // Initialize LDO power rails
     ESP_LOGI(TAG, "Initializing power management...");
@@ -337,7 +236,30 @@ void app_main(void)
         ESP_LOGE(TAG, "Failed to install GPIO ISR service: %s", esp_err_to_name(err));
     }
 
-    // Initialize I2C (needed for touch)
+    // Initialize SD card (audio notes) — required, and must run BEFORE I2C,
+    // touch, STC8, and the display. ESP32-P4 SDMMC slot 0's D0-D7 lines are
+    // dedicated (non-GPIO-matrix) pins that can't be marked "unused" in
+    // bsp_sd.c's slot_config, and this board reuses several of that range for
+    // other peripherals: HSYNC=GPIO40/VSYNC=GPIO41 (display), touch INT=
+    // GPIO42, I2C SDA=GPIO45/SCL=GPIO46, buzzer=GPIO47, button UP=GPIO48. A
+    // failed mount's cleanup path resets ALL of D0-D7 to floating GPIOs
+    // regardless of negotiated bus width — corrupting whichever of those
+    // peripherals was already configured (observed as corrupted video sync,
+    // a broken I2C bus, and an LVGL task hang). Running SD first means a
+    // failure has nothing left to corrupt; everything else initializes fresh
+    // afterward either way.
+    ESP_LOGI(TAG, "Initializing SD card...");
+    err = sd_init();
+    if (err != ESP_OK) {
+        // Minimal, first-time bring-up just for the error screen.
+        i2c_init();
+        stc8_i2c_init();
+        display_init();
+        set_lcd_blight(100);
+        show_sd_error_and_halt(); // never returns
+    }
+
+    // Initialize I2C
     ESP_LOGI(TAG, "Initializing I2C...");
     err = i2c_init();
     if (err != ESP_OK) {
@@ -345,11 +267,37 @@ void app_main(void)
     }
     vTaskDelay(pdMS_TO_TICKS(200));
 
-    // Initialize touch BEFORE display (critical for touch to work!)
+    // Initialize touch (BEFORE display)
     ESP_LOGI(TAG, "Initializing touch...");
     err = touch_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize touch: %s", esp_err_to_name(err));
+    }
+
+    // Initialize STC8H1KXX management MCU (for backlight control)
+    ESP_LOGI(TAG, "Initializing STC8H1KXX...");
+    err = stc8_i2c_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize STC8H1KXX: %s", esp_err_to_name(err));
+    }
+
+    // Initialize NVS — required for settings, session storage, and language
+    ESP_LOGI(TAG, "Initializing NVS...");
+    err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_LOGW(TAG, "NVS partition needs erasing, erasing...");
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(err);
+    ESP_LOGI(TAG, "NVS initialized successfully");
+
+    // Language preference (reads from NVS)
+    i18n_init();
+
+    // Software clock — CrowPanel has no DS3231; best-effort restore from NVS.
+    if (!soft_rtc_init()) {
+        ESP_LOGW(TAG, "No saved time - system clock starts at epoch");
     }
 
     // Initialize display
@@ -359,52 +307,75 @@ void app_main(void)
         ESP_LOGE(TAG, "Display initialization failed: %s", esp_err_to_name(err));
     }
 
-    // Load settings and scans from NVS
-    ESP_LOGI(TAG, "Loading settings and scan history from NVS...");
-    nvs_load_settings(&settings);
-    nvs_load_scans(&scan_list);
-
-    // Add mock scan data for testing (remove when RFID driver is implemented)
-    if (scan_list.count == 0) {
-        ESP_LOGI(TAG, "Adding mock scan data for testing...");
-        strncpy(scan_list.scans[0].eid, "98765432101", sizeof(scan_list.scans[0].eid) - 1);
-        scan_list.scans[0].timestamp = 1000;
-        strncpy(scan_list.scans[1].eid, "12345678901", sizeof(scan_list.scans[1].eid) - 1);
-        scan_list.scans[1].timestamp = 2000;
-        strncpy(scan_list.scans[2].eid, "55555555555", sizeof(scan_list.scans[2].eid) - 1);
-        scan_list.scans[2].timestamp = 3000;
-        scan_list.count = 3;
-    }
-
-    // Initialize BLE GATT server
-    ESP_LOGI(TAG, "Initializing BLE GATT server...");
-    DeviceStatus device_status = {
-        .battery_percent = 100,
-        .scan_count = scan_list.count,
-        .firmware_version = "0.1.0-alpha"
-    };
-    err = ble_gatt_server_init(&scan_list, &device_status);
+    // Initialize session storage (mounts SPIFFS, restores active session)
+    ESP_LOGI(TAG, "Initializing session storage...");
+    err = session_storage_init();
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize BLE: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "Failed to initialize session storage: %s", esp_err_to_name(err));
     }
+
+    // Initialize microphone (shared by the mic test screen and the audio-note
+    // recorder) — non-fatal if it fails, both screens degrade to "unavailable".
+    ESP_LOGI(TAG, "Initializing microphone...");
+    err = mic_init();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Microphone unavailable: %s", esp_err_to_name(err));
+    }
+
+    // Initialize feedback drivers (buzzer + vibrator)
+    ESP_LOGI(TAG, "Initializing feedback drivers...");
+    err = feedback_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize feedback: %s", esp_err_to_name(err));
+    }
+    AppSettings settings;
+    if (nvs_load_settings(&settings) == ESP_OK) {
+        feedback_set_buzzer_enabled(settings.buzzer_enabled);
+        feedback_set_vibrator_enabled(settings.vibrator_enabled);
+        feedback_set_speaker_volume(settings.speaker_volume);
+    }
+
+    // Initialize button driver
+    ESP_LOGI(TAG, "Initializing button driver...");
+    err = button_init(on_button_event);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize buttons: %s", esp_err_to_name(err));
+    }
+
+    // Initialize UI manager (must be after display + NVS + session storage)
+    ESP_LOGI(TAG, "Initializing UI manager...");
+    ui_manager_init();
+
+    // WiFi — starts in background; OTA server launches on connect
+    wifi_set_on_connected(ota_server_start);
+    wifi_manager_init();
+
+    // Set display brightness to maximum
+    set_lcd_blight(100);
+    ESP_LOGI(TAG, "Display brightness set to 100%%");
+
+    // Scan event queue
+    s_scan_queue = xQueueCreate(16, sizeof(RfidScan));
+
+    // RFID reader
+    ESP_LOGI(TAG, "Initializing RFID driver...");
+    err = rfid_init(on_tag_read);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize RFID driver: %s", esp_err_to_name(err));
+    }
+
+    // BLE GATT server — stubbed until ESP-HOSTED (ESP32-C6) bring-up
+    ble_gatt_server_init(on_ble_command);
+    ble_gatt_server_update_status(session_get_tag_count(), FIRMWARE_VERSION);
 
     ESP_LOGI(TAG, "========== System Ready ==========");
-    ESP_LOGI(TAG, "Language: %s, Buzzer: %s, Vibrator: %s, Scans: %d",
-             settings.language, settings.buzzer_enabled ? "ON" : "OFF",
-             settings.vibrator_enabled ? "ON" : "OFF", scan_list.count);
+    ESP_LOGI(TAG, "%" PRIu32 " animals in active session", session_get_tag_count());
+    ESP_LOGI(TAG, "Heap: %lu internal free, %lu total free",
+             (unsigned long)esp_get_free_internal_heap_size(),
+             (unsigned long)esp_get_free_heap_size());
 
-    // Debug: Log current scan list
-    for (int i = 0; i < scan_list.count; i++) {
-        ESP_LOGI(TAG, "  Scan[%d]: %s @ %u", i, scan_list.scans[i].eid, scan_list.scans[i].timestamp);
-    }
-
-    // Show demo screen
-    show_demo_screen();
-
-    // Main loop
-    while (1) {
-        vTaskDelay(pdMS_TO_TICKS(5000));
-        ESP_LOGI(TAG, "running... Settings: lang=%s, buzzer=%d, vib=%d",
-                 settings.language, settings.buzzer_enabled, settings.vibrator_enabled);
+    BaseType_t task_ok = xTaskCreate(main_task, "main_task", 4096, NULL, 5, NULL);
+    if (task_ok != pdPASS) {
+        ESP_LOGE(TAG, "FATAL: failed to create main_task (heap exhausted?)");
     }
 }

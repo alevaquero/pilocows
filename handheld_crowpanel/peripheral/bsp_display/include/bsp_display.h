@@ -31,6 +31,20 @@
 #define V_size CONFIG_V_SIZE
 #define BITS_PER_PIXEL CONFIG_BITS_PER_PIXEL
 
+// The RGB parallel panel's electrical scan direction is fixed at H_size x V_size
+// (800x480) regardless of enclosure mounting - the esp_lcd RGB driver's swap_xy/
+// mirror callbacks remap pixels into that physical buffer during flush, so LVGL
+// and touch can work in a different logical resolution. Set this to 1 when the
+// panel is mounted rotated 90 degrees (portrait enclosure); 0 restores landscape.
+#define DISPLAY_ROTATE_90 1
+#if DISPLAY_ROTATE_90
+#define LV_H_RES V_size /* 480 - logical width LVGL/touch use */
+#define LV_V_RES H_size /* 800 - logical height LVGL/touch use */
+#else
+#define LV_H_RES H_size
+#define LV_V_RES V_size
+#endif
+
 #define LCD_GPIO_BLIGHT CONFIG_LCD_GPIO_BLIGHT
 #define BLIGHT_PWM_Hz CONFIG_BLIGHT_PWM_Hz
 

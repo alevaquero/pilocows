@@ -17,6 +17,7 @@ export interface SessionSummary {
   operator: string
   comments: string
   synced_at: string
+  has_note_audio: boolean
   record_count: number
 }
 
@@ -27,6 +28,7 @@ export interface DbSessionRecord {
   scanned_at: string
   event_data: string   // JSON blob: {"weight_kg":350} | {"vaccines":"..."} | etc.
   note: string
+  has_audio: boolean
   tag_registered: boolean
   animal_id?: number
 }
@@ -57,6 +59,7 @@ export interface IncomingSession {
   created_at: number   // Unix timestamp
   tag_count: number
   note: string
+  note_audio_b64?: string | null
 }
 
 export interface IncomingSessionRecord {
@@ -69,6 +72,7 @@ export interface IncomingSessionRecord {
   test_name?: string
   vaccines?: string
   note?: string
+  audio_b64?: string | null
 }
 
 export interface SyncSessionPayload {

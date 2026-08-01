@@ -1,6 +1,6 @@
 import { dbg, err as dErr } from '../debugLog'
 
-const BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8742/api/v1'
+export const BASE = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8742/api/v1'
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {

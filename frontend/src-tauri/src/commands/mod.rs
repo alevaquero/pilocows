@@ -1,7 +1,20 @@
 use crate::ble::{self, DeviceInfo, HeldSession, SessionMeta, SessionRecord};
 use crate::AppState;
-use tauri::{Manager, State};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use serde::Serialize;
+use tauri::{Emitter, Manager, State};
 use tokio::time::{timeout, Duration};
+
+/// Emitted to the frontend as the "audio-progress" event while a note/tag
+/// clip is downloading — a single transfer can take 100+ seconds over BLE,
+/// so the UI needs incremental updates rather than just a final result.
+#[derive(Clone, Serialize)]
+struct AudioProgressPayload {
+    session_id: u32,
+    eid: Option<String>, // None for the session note, Some(eid) for a tag clip
+    loaded: usize,
+    total: usize,
+}
 
 // ---------------------------------------------------------------------------
 // File save (backup download)
@@ -54,9 +67,12 @@ pub async fn ble_connect(state: State<'_, AppState>, device_id: String) -> Resul
         .as_ref()
         .ok_or("No scan has been performed yet — call ble_scan first")?;
 
-    let conn = timeout(Duration::from_secs(30), ble::connect(adapter, &device_id))
+    // Must exceed ble::connect()'s own internal timeouts (45s connect + 15s
+    // discover_services) or this outer wrapper cuts it off first with a
+    // less specific error.
+    let conn = timeout(Duration::from_secs(75), ble::connect(adapter, &device_id))
         .await
-        .map_err(|_| "Connect timed out (30s) — make sure the handheld is in Sync mode".to_string())??;
+        .map_err(|_| "Connect timed out (75s) — make sure the handheld is in Sync mode".to_string())??;
     drop(adapter_guard);
 
     *state.conn.lock().await = Some(conn);
@@ -115,6 +131,85 @@ pub async fn ble_read_session_meta(
     timeout(Duration::from_secs(30), ble::read_session_meta(conn, session_id))
         .await
         .map_err(|_| "Session meta read timed out (30s) — device may be out of range".to_string())?
+}
+
+// ---------------------------------------------------------------------------
+// Audio capability + reads
+// ---------------------------------------------------------------------------
+
+/// Whether the connected device exposes the audio-note characteristics.
+/// Old SC01 Plus handhelds don't — the sync flow checks this once up front
+/// and skips audio pulls entirely for them, rather than per-clip.
+#[tauri::command]
+pub async fn ble_supports_audio(state: State<'_, AppState>) -> Result<bool, String> {
+    let conn_guard = state.conn.lock().await;
+    Ok(conn_guard.as_ref().map(|c| c.supports_audio).unwrap_or(false))
+}
+
+/// Read a session's voice note, base64-encoded (ready to drop straight into
+/// the backend sync payload's note_audio_b64 field). None if the session has
+/// no note audio, or the device doesn't support audio at all.
+#[tauri::command]
+pub async fn ble_read_session_note_audio(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    session_id: u32,
+) -> Result<Option<String>, String> {
+    let conn_guard = state.conn.lock().await;
+    let conn = conn_guard
+        .as_ref()
+        .ok_or("Not connected — call ble_connect first")?;
+    // Audio pages are ~480 bytes each and, over this board's ESP-Hosted
+    // BLE bridge, per-page latency has been observed climbing steadily
+    // over the course of a long transfer (likely WiFi/BLE coexistence
+    // contention on the C6 co-processor) — a full ~10s clip (320KB) has
+    // taken 300s+ in testing. read_selected_audio has its own per-page
+    // timeout to fail fast on a truly stuck link, so this outer bound just
+    // needs to cover a slow-but-still-progressing worst-case transfer.
+    const AUDIO_TRANSFER_TIMEOUT_SECS: u64 = 600;
+    let bytes = timeout(
+        Duration::from_secs(AUDIO_TRANSFER_TIMEOUT_SECS),
+        ble::read_note_audio(conn, session_id, |loaded, total| {
+            let _ = app.emit(
+                "audio-progress",
+                AudioProgressPayload { session_id, eid: None, loaded, total },
+            );
+        }),
+    )
+    .await
+    .map_err(|_| {
+        format!("Note audio read timed out ({AUDIO_TRANSFER_TIMEOUT_SECS}s) — device may be out of range")
+    })??;
+    Ok(bytes.map(|b| BASE64.encode(b)))
+}
+
+/// Read a tag's voice note, base64-encoded. See ble_read_session_note_audio.
+#[tauri::command]
+pub async fn ble_read_tag_audio(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    session_id: u32,
+    eid: String,
+) -> Result<Option<String>, String> {
+    let conn_guard = state.conn.lock().await;
+    let conn = conn_guard
+        .as_ref()
+        .ok_or("Not connected — call ble_connect first")?;
+    const AUDIO_TRANSFER_TIMEOUT_SECS: u64 = 600;
+    let bytes = timeout(
+        Duration::from_secs(AUDIO_TRANSFER_TIMEOUT_SECS),
+        ble::read_tag_audio(conn, session_id, &eid, |loaded, total| {
+            let _ = app.emit(
+                "audio-progress",
+                AudioProgressPayload { session_id, eid: Some(eid.clone()), loaded, total },
+            );
+        }),
+    )
+    .await
+    .map_err(|_| {
+        format!("Tag audio read timed out ({AUDIO_TRANSFER_TIMEOUT_SECS}s) — device may be out of range")
+    })??;
+    Ok(bytes.map(|b| BASE64.encode(b)))
 }
 
 // ---------------------------------------------------------------------------
