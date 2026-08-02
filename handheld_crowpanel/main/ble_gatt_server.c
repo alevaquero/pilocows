@@ -115,6 +115,21 @@ static const char *disconnect_reason_str(int reason) {
     return "Unknown (non-HCI) reason";
 }
 
+// Decodes common NimBLE host error codes (BLE_HS_E* in host/ble_hs.h) — e.g.
+// a rejected connection parameter update reports status=16 with no other
+// context, which is meaningless without looking up the enum by hand.
+static const char *ble_hs_err_str(int status) {
+    switch (status) {
+        case 0:  return "Success";
+        case 7:  return "Not connected";
+        case 13: return "Timeout";
+        case 15: return "Busy";
+        case 16: return "Rejected by peer";
+        case 18: return "Wrong role for procedure";
+        default: return "Unknown BLE_HS_E* code";
+    }
+}
+
 static void close_audio_file(void) {
     if (s_audio_file) {
         fclose(s_audio_file);
@@ -696,35 +711,42 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg) {
             ESP_LOGI(TAG, "Desktop connected (handle %d)", s_conn_handle);
             if (s_status_cb) s_status_cb(BLE_SYNC_CONNECTED, 0, NULL);
 
-            // Request a longer supervision timeout than whatever default got
-            // negotiated. WiFi/BLE goes through ESP-Hosted to the ESP32-C6
-            // over SDIO on this board (an extra RPC hop the SC01's native
-            // BLE never had) — under host-side load a GATT response can take
-            // longer to round-trip than a short supervision timeout
-            // tolerates, and the link layer drops the connection outright
-            // (observed: disconnect reason 0x208 = BLE_HS_HCI_ERR(conn
-            // supervision timeout), ~1-3s after connecting).
+            // Proactively kick off the ATT MTU exchange instead of waiting
+            // for the central to request it — Apple's accessory guidelines
+            // call for the peripheral to do this immediately on connect. In
+            // practice the Mac has always negotiated this within ~300-600ms
+            // on its own (see the BLE_GAP_EVENT_MTU log below, which fires
+            // regardless of which side initiated), so this is defensive
+            // redundancy rather than a fix for an observed problem. NULL
+            // callback: BLE_GAP_EVENT_MTU already logs the result either way.
+            int mtu_rc = ble_gattc_exchange_mtu(s_conn_handle, NULL, NULL);
+            if (mtu_rc != 0) {
+                ESP_LOGW(TAG, "ble_gattc_exchange_mtu failed: rc=%d", mtu_rc);
+            }
+
+            // itvl_min=12/itvl_max=24 (15-30ms) matches Apple's documented
+            // accessory connection-parameter guideline exactly.
+            //
+            // supervision_timeout: CONFIRMED via device logs that macOS
+            // actively REJECTS this whole update (BLE_GAP_EVENT_CONN_UPDATE
+            // status=16 = BLE_HS_EREJECT, on every single connection,
+            // consistently) whenever supervision_timeout is set well above
+            // Apple's documented 6s figure — we had it at 2000 (20s) trying
+            // to survive slow audio transfers, and that request was silently
+            // rejected every time, meaning the connection ran the whole time
+            // on whatever short default macOS chose instead, not the value
+            // we asked for. 600 (6s) is what Apple's guide specifies and
+            // matches what our own earliest tests used successfully before
+            // it was widened — use it so we get a real, negotiated value
+            // instead of an unknown, shorter, silently-rejected fallback.
+            // (A weak/marginal RF signal is a separate, real contributor to
+            // supervision-timeout disconnects that no parameter choice here
+            // can fully paper over.)
             struct ble_gap_upd_params conn_params = {
-                // Confirmed (not just diagnostic): tightening this to
-                // itvl_min=12/itvl_max=24 for audio-transfer speed broke
-                // SESSION_LIST pagination outright (hung after page 1 across
-                // many repeated tests); reverting to 24/40 fixed it. Leave
-                // this alone even though it's slower than we'd like for
-                // audio — correctness over speed.
-                .itvl_min = 24,             // 30ms (24 * 1.25ms)
-                .itvl_max = 40,             // 50ms
+                .itvl_min = 12,             // 15ms (12 * 1.25ms)
+                .itvl_max = 24,             // 30ms
                 .latency = 0,
-                // 20s (2000 * 10ms). Long BLE audio transfers (100+ seconds,
-                // ~470 round trips) have been observed with per-page latency
-                // that climbs steadily over the course of the transfer —
-                // likely WiFi/BLE radio coexistence contention on the C6
-                // co-processor, which also runs station WiFi + an OTA HTTP
-                // server concurrently — occasionally exceeding the previous
-                // 6s budget outright and killing the link (reason=0x208,
-                // supervision timeout). This doesn't fix the underlying
-                // slowdown, just gives a bad stretch enough room to recover
-                // instead of dropping the connection.
-                .supervision_timeout = 2000,
+                .supervision_timeout = 600, // 6s (600 * 10ms)
                 .min_ce_len = 0,
                 .max_ce_len = 0,
             };
@@ -762,7 +784,8 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg) {
             ESP_LOGI(TAG, "Conn params updated: itvl=%dms latency=%d supervision_timeout=%dms",
                      desc.conn_itvl * 5 / 4, desc.conn_latency, desc.supervision_timeout * 10);
         } else {
-            ESP_LOGW(TAG, "Conn param update failed: status=%d", event->conn_update.status);
+            ESP_LOGW(TAG, "Conn param update failed: status=%d (%s)",
+                     event->conn_update.status, ble_hs_err_str(event->conn_update.status));
         }
         break;
     }
