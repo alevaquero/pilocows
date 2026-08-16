@@ -10,6 +10,12 @@ Animal traceability system for Pilo's farm. Tracks cattle via ISO 11784/85 RFID 
 |:---:|:---:|
 | ![Handheld board unassembled](docs/media/board.png) | ![3D-printed enclosure](docs/media/handheld.png) |
 
+**CAD model (Fusion 360)**
+
+![CAD render of the handheld scanner enclosure](docs/Pilocows_Cow_Scanner%20v2%20v21.png)
+
+Full CAD source (STEP format): [`docs/Pilocows_Cow_Scanner v2.step`](<docs/Pilocows_Cow_Scanner v2.step>)
+
 **Desktop app**
 
 ![Frontend screenshot](docs/media/frontend.png)
