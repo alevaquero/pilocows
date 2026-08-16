@@ -4,6 +4,8 @@
 #include "strings_en.h"
 #include "bsp_mic.h"
 #include "bsp_audio.h"
+#include "audio_codec_util.h"
+#include "ui_icons.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
@@ -13,6 +15,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 static const char *TAG = "scr_audio_note";
 
@@ -20,6 +23,18 @@ static const char *TAG = "scr_audio_note";
 #define MIC_MAX_SAMPLES (MIC_MAX_RECORD_SECONDS * MIC_SAMPLE_RATE_HZ)
 #define MIC_READ_CHUNK_SAMPLES 512
 #define WAV_HEADER_BYTES 44
+// Playback is written to i2s in chunks of this size (instead of one big
+// blocking write) purely so the level meter has something to sample and
+// animate per chunk while audio is playing back — same idea as the mic's
+// per-chunk peak during recording, ~32ms/chunk at 16kHz.
+#define PLAYBACK_CHUNK_SAMPLES 512
+// Live recording level display only, applied on top of the sqrt scale
+// below — does NOT touch the stored audio. Without this the live meter
+// reads much quieter than a played-back clip, since normalize_recording()
+// only boosts the finished recording up to ~85% peak *after* capture ends;
+// this makes the live meter roughly match that same visual intensity while
+// still recording, instead of looking abnormally flat by comparison.
+#define RECORD_LEVEL_VISUAL_BOOST 3.0f
 
 static lv_obj_t *s_scr = NULL;
 static lv_obj_t *s_lbl_title = NULL;
@@ -37,15 +52,19 @@ static int16_t *s_rec_buf = NULL; // PSRAM scratch, MIC_MAX_SAMPLES mono int16 s
 static volatile bool s_recording = false;
 static volatile bool s_stop_requested = false;
 static volatile size_t s_rec_samples = 0; // samples captured so far / in the last fresh recording
-static volatile int s_level_pct = 0;      // 0-100, most recent chunk's peak level
+static volatile int s_level_pct = 0;      // 0-100, most recent chunk's peak level (recording or playback)
 static TaskHandle_t s_rec_task = NULL;
 static bool s_was_recording = false; // edge-detect recording -> idle in the UI timer
+static volatile bool s_playing = false; // true for the duration of a play_buffer_task/play_file_task
+static bool s_was_playing = false;      // edge-detect playing -> idle in the UI timer
 
 // Configured per-show() — what this note is attached to and how to persist it.
 static char s_title[48];
 static char s_wav_path[64];
-static bool s_has_existing = false; // a clip already existed on SD when the screen was opened
+static bool s_has_existing = false; // a clip already existed (SD file or staged PCM) when the screen was opened
 static bool s_has_fresh = false;    // a new recording was captured during this screen visit (takes priority for Play)
+static const int16_t *s_existing_pcm = NULL; // caller-owned staged clip, not yet on SD (see screen_audio_note.h)
+static size_t s_existing_pcm_samples = 0;
 static screen_id_t s_return_screen = SCREEN_SESSION_MENU;
 static audio_note_recorded_cb_t s_on_recorded = NULL;
 static audio_note_deleted_cb_t s_on_deleted = NULL;
@@ -133,7 +152,17 @@ static void record_task(void *arg) {
             int16_t av = chunk[i] < 0 ? (int16_t)(-chunk[i]) : chunk[i];
             if (av > peak) peak = av;
         }
-        s_level_pct = (peak * 100) / 32767;
+        // Perceptual (sqrt) scale instead of linear: normal speech rarely
+        // gets close to full-scale (32767), so a linear peak/32767 mapping
+        // left the level bar barely moving even while clearly recording.
+        // sqrt boosts the visible range for typical (non-clipping) levels
+        // — e.g. a peak of 8000 reads ~49% instead of ~24% — while still
+        // correctly saturating at 100% for genuinely loud/clipping input.
+        // RECORD_LEVEL_VISUAL_BOOST is applied first so the live meter's
+        // intensity matches the normalized/boosted level heard on playback.
+        float boosted = (float)peak * RECORD_LEVEL_VISUAL_BOOST;
+        if (boosted > 32767.0f) boosted = 32767.0f;
+        s_level_pct = (int)(sqrtf(boosted / 32767.0f) * 100.0f);
 
         memcpy(&s_rec_buf[total], chunk, got * sizeof(int16_t));
         total += got;
@@ -173,9 +202,22 @@ static void stop_recording(void) {
 
 // ── Playback (reuses bsp_audio; duplicates mono -> stereo on the fly) ───────
 
+// Plays a raw mono PCM buffer — used both for a recording just made in this
+// screen visit (s_rec_buf) and for a caller-owned staged clip from an
+// earlier visit (s_existing_pcm). Takes the buffer/length via a heap-
+// allocated args struct (freed here) rather than reading module globals
+// directly, since which buffer to play differs per call site.
+typedef struct {
+    const int16_t *pcm;
+    size_t n_samples;
+} play_buffer_args_t;
+
 static void play_buffer_task(void *arg) {
-    (void)arg;
-    size_t n_samples = s_rec_samples;
+    play_buffer_args_t *a = (play_buffer_args_t *)arg;
+    const int16_t *pcm = a->pcm;
+    size_t n_samples = a->n_samples;
+    free(a);
+
     if (n_samples == 0) {
         vTaskDelete(NULL);
         return;
@@ -188,7 +230,7 @@ static void play_buffer_task(void *arg) {
         return;
     }
     for (size_t i = 0; i < n_samples; i++) {
-        int32_t v = (int32_t)(s_rec_buf[i] * 1.2f);
+        int32_t v = (int32_t)(pcm[i] * 1.2f);
         if (v > 32767) v = 32767;
         else if (v < -32768) v = -32768;
         stereo[2 * i] = (int16_t)v;
@@ -197,8 +239,23 @@ static void play_buffer_task(void *arg) {
 
     set_audio_ctrl(true);
     vTaskDelay(pdMS_TO_TICKS(60)); // let the amp finish its wake-up ramp before real audio
+    s_playing = true;
     size_t written = 0;
-    i2s_channel_write(get_audio_handle(), stereo, n_samples * 2 * sizeof(int16_t), &written, portMAX_DELAY);
+    for (size_t off = 0; off < n_samples; off += PLAYBACK_CHUNK_SAMPLES) {
+        size_t chunk_n = n_samples - off;
+        if (chunk_n > PLAYBACK_CHUNK_SAMPLES) chunk_n = PLAYBACK_CHUNK_SAMPLES;
+
+        int16_t peak = 0;
+        for (size_t i = 0; i < chunk_n; i++) {
+            int16_t av = stereo[2 * (off + i)];
+            if (av < 0) av = (int16_t)(-av);
+            if (av > peak) peak = av;
+        }
+        s_level_pct = (int)(sqrtf((float)peak / 32767.0f) * 100.0f);
+
+        i2s_channel_write(get_audio_handle(), &stereo[2 * off], chunk_n * 2 * sizeof(int16_t), &written, portMAX_DELAY);
+    }
+    s_playing = false;
     vTaskDelay(pdMS_TO_TICKS(80));
     set_audio_ctrl(false);
 
@@ -206,8 +263,27 @@ static void play_buffer_task(void *arg) {
     vTaskDelete(NULL);
 }
 
-// Streams an existing WAV file from SD in small chunks rather than loading it
-// into RAM, since existing clips can be up to the full 10s/320KB cap.
+// Spawns play_buffer_task for the given buffer. Returns silently (no
+// playback) if the args allocation fails — same failure mode as the
+// pre-existing "No memory for playback buffer" path inside the task.
+static void play_pcm(const int16_t *pcm, size_t n_samples) {
+    play_buffer_args_t *args = malloc(sizeof(*args));
+    if (!args) return;
+    args->pcm = pcm;
+    args->n_samples = n_samples;
+    xTaskCreate(play_buffer_task, "an_play_buf", 3072, args, 3, NULL);
+}
+
+#define WAVE_FORMAT_ALAW 6
+
+// Existing clips on SD are now G.711 A-law/8kHz (see session_storage.c), so
+// playback needs a decode pass first — done as one whole-buffer operation
+// (max size is bounded and small: a full 10s clip is at most ~80KB A-law
+// in, ~320KB PCM out, trivial for this board's 32MB PSRAM) rather than
+// streamed, since the decoder needs the full buffer's context anyway.
+// The WAV header's own audio_format field decides whether to decode —
+// a clip recorded before this firmware update is still plain 16-bit PCM
+// and is used as-is, so old on-SD recordings don't turn into noise.
 static void play_file_task(void *arg) {
     (void)arg;
     FILE *f = fopen(s_wav_path, "rb");
@@ -216,32 +292,100 @@ static void play_file_task(void *arg) {
         vTaskDelete(NULL);
         return;
     }
+
+    uint8_t header[WAV_HEADER_BYTES];
+    if (fread(header, 1, sizeof(header), f) != sizeof(header)) {
+        ESP_LOGW(TAG, "%s too small to contain a WAV header", s_wav_path);
+        fclose(f);
+        vTaskDelete(NULL);
+        return;
+    }
+    uint16_t audio_format = (uint16_t)(header[20] | (header[21] << 8));
+    bool is_alaw = (audio_format == WAVE_FORMAT_ALAW);
+
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    long data_len = file_size - WAV_HEADER_BYTES;
+    if (data_len <= 0) {
+        ESP_LOGW(TAG, "%s too small to contain audio data (%ld bytes)", s_wav_path, file_size);
+        fclose(f);
+        vTaskDelete(NULL);
+        return;
+    }
     fseek(f, WAV_HEADER_BYTES, SEEK_SET);
 
-    int16_t mono[MIC_READ_CHUNK_SAMPLES];
-    int16_t stereo[MIC_READ_CHUNK_SAMPLES * 2];
+    uint8_t *raw_buf = malloc((size_t)data_len);
+    if (!raw_buf) {
+        ESP_LOGW(TAG, "No memory for playback buffer (%ld bytes)", data_len);
+        fclose(f);
+        vTaskDelete(NULL);
+        return;
+    }
+    size_t read_n = fread(raw_buf, 1, (size_t)data_len, f);
+    fclose(f);
+    if (read_n != (size_t)data_len) {
+        ESP_LOGW(TAG, "Short read on %s (%zu/%ld bytes)", s_wav_path, read_n, data_len);
+        free(raw_buf);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    int16_t *pcm16k = NULL;
+    size_t n_samples = 0;
+    if (is_alaw) {
+        esp_err_t err = audio_codec_decode_alaw_to_16k(raw_buf, read_n, &pcm16k, &n_samples);
+        free(raw_buf);
+        if (err != ESP_OK || !pcm16k) {
+            ESP_LOGW(TAG, "A-law decode failed for %s: %s", s_wav_path, esp_err_to_name(err));
+            vTaskDelete(NULL);
+            return;
+        }
+    } else {
+        // Already 16-bit PCM (a clip from before this update) — reinterpret
+        // the same buffer directly, no decode needed.
+        n_samples = read_n / sizeof(int16_t);
+        pcm16k = (int16_t *)raw_buf;
+    }
+
+    int16_t *stereo = malloc(n_samples * 2 * sizeof(int16_t));
+    if (!stereo) {
+        ESP_LOGW(TAG, "No memory for playback buffer");
+        free(pcm16k);
+        vTaskDelete(NULL);
+        return;
+    }
+    for (size_t i = 0; i < n_samples; i++) {
+        int32_t v = (int32_t)(pcm16k[i] * 1.2f);
+        if (v > 32767) v = 32767;
+        else if (v < -32768) v = -32768;
+        stereo[2 * i] = (int16_t)v;
+        stereo[2 * i + 1] = (int16_t)v;
+    }
+    free(pcm16k);
 
     set_audio_ctrl(true);
     vTaskDelay(pdMS_TO_TICKS(60));
+    s_playing = true;
+    size_t written = 0;
+    for (size_t off = 0; off < n_samples; off += PLAYBACK_CHUNK_SAMPLES) {
+        size_t chunk_n = n_samples - off;
+        if (chunk_n > PLAYBACK_CHUNK_SAMPLES) chunk_n = PLAYBACK_CHUNK_SAMPLES;
 
-    bool wrote_any = false;
-    size_t n;
-    while ((n = fread(mono, sizeof(int16_t), MIC_READ_CHUNK_SAMPLES, f)) > 0) {
-        for (size_t i = 0; i < n; i++) {
-            int32_t v = (int32_t)(mono[i] * 1.2f);
-            if (v > 32767) v = 32767;
-            else if (v < -32768) v = -32768;
-            stereo[2 * i] = (int16_t)v;
-            stereo[2 * i + 1] = (int16_t)v;
+        int16_t peak = 0;
+        for (size_t i = 0; i < chunk_n; i++) {
+            int16_t av = stereo[2 * (off + i)];
+            if (av < 0) av = (int16_t)(-av);
+            if (av > peak) peak = av;
         }
-        size_t written = 0;
-        i2s_channel_write(get_audio_handle(), stereo, n * 2 * sizeof(int16_t), &written, portMAX_DELAY);
-        wrote_any = true;
-    }
-    fclose(f);
+        s_level_pct = (int)(sqrtf((float)peak / 32767.0f) * 100.0f);
 
-    if (wrote_any) vTaskDelay(pdMS_TO_TICKS(80));
+        i2s_channel_write(get_audio_handle(), &stereo[2 * off], chunk_n * 2 * sizeof(int16_t), &written, portMAX_DELAY);
+    }
+    s_playing = false;
+    vTaskDelay(pdMS_TO_TICKS(80));
     set_audio_ctrl(false);
+
+    free(stereo);
     vTaskDelete(NULL);
 }
 
@@ -260,7 +404,9 @@ static void on_play(lv_event_t *e) {
     (void)e;
     if (s_recording) return;
     if (s_has_fresh && s_rec_samples > 0) {
-        xTaskCreate(play_buffer_task, "an_play_buf", 3072, NULL, 3, NULL);
+        play_pcm(s_rec_buf, s_rec_samples);
+    } else if (s_has_existing && s_existing_pcm && s_existing_pcm_samples > 0) {
+        play_pcm(s_existing_pcm, s_existing_pcm_samples);
     } else if (s_has_existing && s_wav_path[0]) {
         xTaskCreate(play_file_task, "an_play_file", 3584, NULL, 3, NULL);
     }
@@ -278,6 +424,8 @@ static void on_delete(lv_event_t *e) {
     s_has_existing = false;
     s_rec_samples = 0;
     s_wav_path[0] = '\0';
+    s_existing_pcm = NULL;
+    s_existing_pcm_samples = 0;
 
     lv_chart_set_all_value(s_chart, s_chart_series, 0);
     lv_obj_add_state(s_btn_play, LV_STATE_DISABLED);
@@ -308,6 +456,13 @@ static void ui_timer_cb(lv_timer_t *t) {
             ESP_LOGW(TAG, "Recording finished with 0 samples — nothing to save");
         }
         update_status_label();
+    } else if (s_playing) {
+        lv_chart_set_next_value(s_chart, s_chart_series, s_level_pct);
+        s_was_playing = true;
+    } else if (s_was_playing) {
+        // Playback just finished (edge from playing -> idle).
+        s_was_playing = false;
+        lv_chart_set_all_value(s_chart, s_chart_series, 0);
     }
 }
 
@@ -364,10 +519,7 @@ void screen_audio_note_create(void) {
     lv_obj_set_style_pad_all(btn_back, 0, LV_PART_MAIN);
     lv_obj_set_ext_click_area(btn_back, 6);
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_back = lv_label_create(btn_back);
-    lv_label_set_text(lbl_back, LV_SYMBOL_LEFT);
-    lv_obj_set_style_text_font(lbl_back, &lv_font_app_30, LV_PART_MAIN);
-    lv_obj_center(lbl_back);
+    ui_icon_create(btn_back, UI_SYMBOL_BACK, lv_color_white(), &lv_font_app_30);
 
     s_lbl_title = lv_label_create(hdr);
     lv_label_set_text(s_lbl_title, "");
@@ -420,11 +572,7 @@ void screen_audio_note_create(void) {
     lv_obj_set_style_bg_color(s_btn_play, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN);
     lv_obj_add_state(s_btn_play, LV_STATE_DISABLED);
     lv_obj_add_event_cb(s_btn_play, on_play, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_play = lv_label_create(s_btn_play);
-    lv_label_set_text(lbl_play, LV_SYMBOL_PLAY);
-    lv_obj_set_style_text_font(lbl_play, &lv_font_app_30, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_play, lv_color_white(), LV_PART_MAIN);
-    lv_obj_center(lbl_play);
+    ui_icon_create(s_btn_play, UI_SYMBOL_PLAY, lv_color_white(), &lv_font_app_44);
 
     s_btn_delete = lv_btn_create(s_scr);
     lv_obj_set_size(s_btn_delete, 90, 90);
@@ -433,11 +581,7 @@ void screen_audio_note_create(void) {
     lv_obj_set_style_bg_color(s_btn_delete, lv_color_hex(0xC0392B), LV_PART_MAIN);
     lv_obj_add_state(s_btn_delete, LV_STATE_DISABLED);
     lv_obj_add_event_cb(s_btn_delete, on_delete, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_delete = lv_label_create(s_btn_delete);
-    lv_label_set_text(lbl_delete, LV_SYMBOL_TRASH);
-    lv_obj_set_style_text_font(lbl_delete, &lv_font_app_30, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_delete, lv_color_white(), LV_PART_MAIN);
-    lv_obj_center(lbl_delete);
+    ui_icon_create(s_btn_delete, UI_SYMBOL_TRASH, lv_color_white(), &lv_font_app_44);
 
     s_ui_timer = lv_timer_create(ui_timer_cb, 100, NULL);
 
@@ -466,6 +610,8 @@ void screen_audio_note_show(const audio_note_cfg_t *cfg) {
         strncpy(s_wav_path, cfg->existing_wav_path, sizeof(s_wav_path) - 1);
         s_wav_path[sizeof(s_wav_path) - 1] = '\0';
     }
+    s_existing_pcm = (cfg->has_existing) ? cfg->existing_pcm : NULL;
+    s_existing_pcm_samples = (cfg->has_existing) ? cfg->existing_pcm_samples : 0;
 
     s_return_screen = cfg->return_screen;
     s_on_recorded = cfg->on_recorded;

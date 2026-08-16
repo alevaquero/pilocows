@@ -4,6 +4,7 @@
 #include "i18n.h"
 #include "strings_en.h"
 #include "ble_gatt_server.h"
+#include "ui_icons.h"
 #include "lvgl.h"
 #include <string.h>
 #include <stdlib.h>
@@ -133,10 +134,7 @@ void screen_ble_sync_create(void) {
     lv_obj_set_style_pad_all(btn_back, 0, LV_PART_MAIN);
     lv_obj_set_ext_click_area(btn_back, 6);
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_back = lv_label_create(btn_back);
-    lv_label_set_text(lbl_back, LV_SYMBOL_LEFT);
-    lv_obj_set_style_text_font(lbl_back, &lv_font_app_30, LV_PART_MAIN);
-    lv_obj_center(lbl_back);
+    ui_icon_create(btn_back, UI_SYMBOL_BACK, lv_color_white(), &lv_font_app_30);
 
     s_lbl_title = lv_label_create(hdr);
     lv_label_set_text(s_lbl_title, i18n_t(STR_SETTINGS_SYNC));

@@ -445,8 +445,20 @@ pub async fn read_session_data(
     // Must match SESSION_DATA_PAGE_SIZE in ble_server.cpp
     const PAGE_SIZE: usize = 5;
 
+    // Per-operation timeout on every write/read (not an overall duration cap
+    // on the whole multi-page loop) — a session with many records legitimately
+    // takes longer over a slow link, and that's fine as long as each
+    // individual step keeps completing; only a step that itself stalls this
+    // long should fail.
+    const OP_TIMEOUT: Duration = Duration::from_secs(10);
+
     // Select the session first (also resets s_data_offset on the handheld)
-    send_control(conn, &serde_json::json!({"cmd": "select", "id": session_id})).await?;
+    tokio::time::timeout(
+        OP_TIMEOUT,
+        send_control(conn, &serde_json::json!({"cmd": "select", "id": session_id})),
+    )
+    .await
+    .map_err(|_| format!("SESSION_DATA select timed out ({}s)", OP_TIMEOUT.as_secs()))??;
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     let mut all: Vec<SessionRecord> = Vec::new();
@@ -456,14 +468,18 @@ pub async fn read_session_data(
         // Set the page window (skip for offset=0 since select already reset it,
         // but send anyway for clarity and safety on subsequent pages)
         if offset > 0 {
-            send_control(conn, &serde_json::json!({"cmd": "data_page", "offset": offset})).await?;
+            tokio::time::timeout(
+                OP_TIMEOUT,
+                send_control(conn, &serde_json::json!({"cmd": "data_page", "offset": offset})),
+            )
+            .await
+            .map_err(|_| format!("data_page CONTROL write timed out ({}s) at offset {offset}", OP_TIMEOUT.as_secs()))??;
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
 
-        let raw = conn
-            .peripheral
-            .read(char)
+        let raw = tokio::time::timeout(OP_TIMEOUT, conn.peripheral.read(char))
             .await
+            .map_err(|_| format!("SESSION_DATA read timed out ({}s) at offset {offset}", OP_TIMEOUT.as_secs()))?
             .map_err(|e| e.to_string())?;
 
         let raw_len = raw.len();
@@ -628,7 +644,12 @@ async fn read_selected_audio(
     loop {
         let offset = bytes.len() as u32;
 
-        send_control(conn, &serde_json::json!({"cmd": "audio_page", "offset": offset})).await?;
+        tokio::time::timeout(
+            PAGE_TIMEOUT,
+            send_control(conn, &serde_json::json!({"cmd": "audio_page", "offset": offset})),
+        )
+        .await
+        .map_err(|_| format!("audio_page CONTROL write timed out ({}s) at offset {offset}", PAGE_TIMEOUT.as_secs()))??;
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         let page = tokio::time::timeout(PAGE_TIMEOUT, conn.peripheral.read(data_char))
@@ -706,9 +727,9 @@ pub async fn read_note_audio(
     if !conn.supports_audio {
         return Ok(None);
     }
-    send_control(conn, &serde_json::json!({"cmd": "select", "id": session_id})).await?;
+    send_control_timed(conn, &serde_json::json!({"cmd": "select", "id": session_id})).await?;
     tokio::time::sleep(Duration::from_millis(50)).await;
-    send_control(conn, &serde_json::json!({"cmd": "select_note_audio"})).await?;
+    send_control_timed(conn, &serde_json::json!({"cmd": "select_note_audio"})).await?;
     tokio::time::sleep(Duration::from_millis(50)).await;
     read_selected_audio(conn, on_progress).await
 }
@@ -722,9 +743,9 @@ pub async fn read_tag_audio(
     if !conn.supports_audio {
         return Ok(None);
     }
-    send_control(conn, &serde_json::json!({"cmd": "select", "id": session_id})).await?;
+    send_control_timed(conn, &serde_json::json!({"cmd": "select", "id": session_id})).await?;
     tokio::time::sleep(Duration::from_millis(50)).await;
-    send_control(conn, &serde_json::json!({"cmd": "select_tag_audio", "eid": eid})).await?;
+    send_control_timed(conn, &serde_json::json!({"cmd": "select_tag_audio", "eid": eid})).await?;
     tokio::time::sleep(Duration::from_millis(50)).await;
     read_selected_audio(conn, on_progress).await
 }
@@ -752,6 +773,17 @@ async fn send_control(conn: &BleConn, payload: &serde_json::Value) -> Result<(),
         .write(char, &data, WriteType::WithResponse)
         .await
         .map_err(|e| e.to_string())
+}
+
+// A single CONTROL write should always complete quickly (it's a small fixed
+// JSON payload) — this bounds an individual write so a stuck one fails fast
+// and clearly, rather than only being caught by whatever much larger overall
+// command timeout wraps the whole operation.
+async fn send_control_timed(conn: &BleConn, payload: &serde_json::Value) -> Result<(), String> {
+    const OP_TIMEOUT: Duration = Duration::from_secs(10);
+    tokio::time::timeout(OP_TIMEOUT, send_control(conn, payload))
+        .await
+        .map_err(|_| format!("CONTROL write timed out ({}s)", OP_TIMEOUT.as_secs()))?
 }
 
 // ---------------------------------------------------------------------------

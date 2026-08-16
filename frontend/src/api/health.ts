@@ -11,6 +11,13 @@ export interface Vaccination {
   next_due_at: string | null
   notes: string
   created_at: string
+  // Set only for rows fanned out from a handheld session sync (see backend's
+  // fan_out_session_record) — session_id/eid trace back to the session_records
+  // row that produced this, so its per-tag voice note (if any) can be played
+  // here too. null for rows created directly via this UI.
+  session_id: number | null
+  eid: string | null
+  has_audio: boolean
 }
 
 export interface CreateVaccinationPayload {
@@ -31,6 +38,10 @@ export interface Pregnancy {
   due_date: string | null
   notes: string
   created_at: string
+  // See Vaccination's session_id/eid/has_audio comment above.
+  session_id: number | null
+  eid: string | null
+  has_audio: boolean
 }
 
 export interface CreatePregnancyPayload {
@@ -50,6 +61,10 @@ export interface Test {
   tested_at: string
   notes: string
   created_at: string
+  // See Vaccination's session_id/eid/has_audio comment above.
+  session_id: number | null
+  eid: string | null
+  has_audio: boolean
 }
 
 export interface CreateTestPayload {
@@ -68,6 +83,10 @@ export interface Weight {
   weighed_at: string
   notes: string
   created_at: string
+  // See Vaccination's session_id/eid/has_audio comment above.
+  session_id: number | null
+  eid: string | null
+  has_audio: boolean
 }
 
 export interface CreateWeightPayload {

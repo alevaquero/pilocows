@@ -4,9 +4,11 @@
 #include "ui_keyboard.h"
 #include "ui_text_entry.h"
 #include "screen_audio_note.h"
+#include "ui_icons.h"
 #include "i18n.h"
 #include "strings_en.h"
 #include "session_storage.h"
+#include "soft_rtc.h"
 #include "esp_log.h"
 #include "lvgl.h"
 #include <stdio.h>
@@ -15,6 +17,20 @@
 #include <inttypes.h>
 
 static const char *TAG_UNUSED = "screen_scan"; // kept for parity with logging convention elsewhere
+
+// ── Scan flash effect timing ─────────────────────────────────────────────────
+// The color flash (green=new, red=duplicate) grows outward from the center
+// point of the screen as a rectangle — both width and height expanding
+// together — until it covers the full 480x800 screen, holds solid, then
+// shrinks back down to that center point and disappears. Replaces the old
+// instant full-screen show/hide, which the display couldn't redraw fast
+// enough to look clean in one frame. Total sequence = FILL + HOLD + UNFILL;
+// adjust these three independently to retune feel/duration.
+#define SCAN_FLASH_FILL_MS    350  // 0x0 -> full screen (center outward)
+#define SCAN_FLASH_HOLD_MS    450  // full screen, solid
+#define SCAN_FLASH_UNFILL_MS  350  // full screen -> 0x0 (back to center), then hides
+#define SCAN_FLASH_SCREEN_W    480 // must match this screen's design width/height (see layout
+#define SCAN_FLASH_SCREEN_H    800 // comment above)
 
 // ── Layout ────────────────────────────────────────────────────────────────────
 // 480x800 portrait:
@@ -109,7 +125,6 @@ static lv_obj_t *s_lbl_btn_go_sessions;
 static lv_obj_t *s_flash_overlay;
 
 // ── Timers ───────────────────────────────────────────────────────────────────
-static lv_timer_t *s_flash_timer = NULL;
 static lv_timer_t *s_clock_timer = NULL;
 static lv_timer_t *s_status_timer = NULL;
 
@@ -381,10 +396,24 @@ static void on_screen_loaded(lv_event_t *e) {
     }
 }
 
-static void hide_flash_cb(lv_timer_t *t) {
-    (void)t;
+// Drives s_flash_overlay's size while keeping it centered on the screen —
+// the animated value is height (0..SCAN_FLASH_SCREEN_H); width is derived
+// proportionally so both dimensions reach their full size at the same
+// instant, making it read as a rectangle growing from (and collapsing back
+// to) a single point at the screen's center.
+static void flash_rect_anim_cb(void *var, int32_t height) {
+    lv_obj_t *obj = (lv_obj_t *)var;
+    int32_t width = (height * SCAN_FLASH_SCREEN_W) / SCAN_FLASH_SCREEN_H;
+    lv_obj_set_size(obj, width, height);
+    lv_obj_set_pos(obj, (SCAN_FLASH_SCREEN_W - width) / 2, (SCAN_FLASH_SCREEN_H - height) / 2);
+}
+
+// Fires once, only after BOTH the grow (forward) and shrink-back (LVGL
+// "playback") phases have completed — see anim_ready_handler() in
+// lv_anim.c, which only invokes ready_cb once playback_now flips back to 0.
+static void flash_hide_ready_cb(lv_anim_t *a) {
+    (void)a;
     lv_obj_add_flag(s_flash_overlay, LV_OBJ_FLAG_HIDDEN);
-    s_flash_timer = NULL;
 }
 
 static void set_status_ready(void) {
@@ -402,10 +431,10 @@ static void clear_status_cb(lv_timer_t *t) {
 
 static void clock_tick_cb(lv_timer_t *t) {
     (void)t;
-    time_t now = time(NULL);
-    struct tm *tm_info = localtime(&now);
+    struct tm tm_info;
+    soft_rtc_get_local_tm(&tm_info);
     char buf[24];
-    strftime(buf, sizeof(buf), "%d %b %H:%M", tm_info);
+    strftime(buf, sizeof(buf), "%d %b %H:%M", &tm_info);
     lv_label_set_text(s_lbl_clock, buf);
 }
 
@@ -460,10 +489,7 @@ void screen_scan_create(void) {
     lv_obj_set_style_pad_all(btn_back, 0, LV_PART_MAIN);
     lv_obj_set_ext_click_area(btn_back, 6);
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_back = lv_label_create(btn_back);
-    lv_label_set_text(lbl_back, LV_SYMBOL_LEFT);
-    lv_obj_set_style_text_font(lbl_back, &lv_font_app_30, LV_PART_MAIN);
-    lv_obj_center(lbl_back);
+    ui_icon_create(btn_back, UI_SYMBOL_BACK, lv_color_white(), &lv_font_app_30);
 
     // Date/time only (was also carrying session name + tag count - moved out
     // to their own elements below so this row stays uncluttered).
@@ -471,7 +497,10 @@ void screen_scan_create(void) {
     lv_label_set_text(s_lbl_clock, "-- --- --:--");
     lv_obj_set_style_text_font(s_lbl_clock, &lv_font_app_28, LV_PART_MAIN);
     lv_obj_set_style_text_color(s_lbl_clock, lv_color_white(), LV_PART_MAIN);
-    lv_obj_align(s_lbl_clock, LV_ALIGN_CENTER, 0, 0);
+    // Centered in the space left of the header buttons once they're shown
+    // (see screen_scan_set_session(), which re-centers on show/hide) — both
+    // start hidden, so this matches that state initially.
+    lv_obj_align(s_lbl_clock, LV_ALIGN_CENTER, 37, 0);
 
     s_btn_sess_note = lv_btn_create(hdr);
     lv_obj_set_size(s_btn_sess_note, 70, 70);
@@ -481,10 +510,7 @@ void screen_scan_create(void) {
     lv_obj_set_style_pad_all(s_btn_sess_note, 0, LV_PART_MAIN);
     lv_obj_set_ext_click_area(s_btn_sess_note, 6);
     lv_obj_add_event_cb(s_btn_sess_note, on_animal_note_btn, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_note_icon = lv_label_create(s_btn_sess_note);
-    lv_label_set_text(lbl_note_icon, LV_SYMBOL_EDIT);
-    lv_obj_set_style_text_font(lbl_note_icon, &lv_font_app_30, LV_PART_MAIN);
-    lv_obj_center(lbl_note_icon);
+    ui_icon_create(s_btn_sess_note, UI_SYMBOL_EDIT, lv_color_white(), &lv_font_app_30);
     lv_obj_add_flag(s_btn_sess_note, LV_OBJ_FLAG_HIDDEN);
 
     s_btn_tag_audio = lv_btn_create(hdr);
@@ -495,10 +521,7 @@ void screen_scan_create(void) {
     lv_obj_set_style_pad_all(s_btn_tag_audio, 0, LV_PART_MAIN);
     lv_obj_set_ext_click_area(s_btn_tag_audio, 6);
     lv_obj_add_event_cb(s_btn_tag_audio, on_tag_audio_btn, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_tag_audio_icon = lv_label_create(s_btn_tag_audio);
-    lv_label_set_text(lbl_tag_audio_icon, LV_SYMBOL_AUDIO);
-    lv_obj_set_style_text_font(lbl_tag_audio_icon, &lv_font_app_30, LV_PART_MAIN);
-    lv_obj_center(lbl_tag_audio_icon);
+    ui_icon_create(s_btn_tag_audio, UI_SYMBOL_MIC, lv_color_white(), &lv_font_app_30);
     lv_obj_add_flag(s_btn_tag_audio, LV_OBJ_FLAG_HIDDEN);
 
     // ── Session name (y=84 h=38), same font as the main menu's session card ──
@@ -778,12 +801,15 @@ void screen_scan_create(void) {
     lv_obj_add_flag(s_no_session_panel, LV_OBJ_FLAG_HIDDEN);
 
     // ── Flash overlay ───────────────────────────────────────────────────────
+    // Starts as a zero-size point at screen center — screen_scan_flash()
+    // animates it up to the full 480x800 (and back), re-centering it every
+    // frame, so it reads as a rectangle growing outward from the middle.
     s_flash_overlay = lv_obj_create(s_scr);
-    lv_obj_set_size(s_flash_overlay, 480, 800);
-    lv_obj_align(s_flash_overlay, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_set_size(s_flash_overlay, 0, 0);
+    lv_obj_set_pos(s_flash_overlay, SCAN_FLASH_SCREEN_W / 2, SCAN_FLASH_SCREEN_H / 2);
     lv_obj_set_style_radius(s_flash_overlay, 0, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_flash_overlay, 0, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_flash_overlay, LV_OPA_60, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_flash_overlay, LV_OPA_90, LV_PART_MAIN);
     lv_obj_set_style_bg_color(s_flash_overlay, lv_palette_main(LV_PALETTE_GREEN), LV_PART_MAIN);
     lv_obj_add_flag(s_flash_overlay, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(s_flash_overlay, LV_OBJ_FLAG_CLICKABLE);
@@ -815,6 +841,11 @@ void screen_scan_set_session(const session_meta_t *meta) {
         lv_obj_add_flag(s_no_session_panel, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(s_btn_sess_note, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(s_btn_tag_audio, LV_OBJ_FLAG_HIDDEN);
+        // Recenter in the space actually left of the header buttons (73 to
+        // 329px) rather than the full header width — screen-center (240)
+        // sits visibly right of that space's true center once both icons
+        // are showing.
+        lv_obj_align(s_lbl_clock, LV_ALIGN_CENTER, -39, 0);
         show_data_panel_for_type(meta->type);
         populate_vax_panel();
         if (meta->type == SESSION_TYPE_TEST) {
@@ -831,6 +862,9 @@ void screen_scan_set_session(const session_meta_t *meta) {
         lv_obj_add_flag(s_lbl_vax_compact, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_btn_sess_note, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(s_btn_tag_audio, LV_OBJ_FLAG_HIDDEN);
+        // Recenter in the space left of the (now-hidden) header buttons —
+        // 73 to 480px — same reasoning as the branch above.
+        lv_obj_align(s_lbl_clock, LV_ALIGN_CENTER, 37, 0);
     }
     update_session_bar();
     screen_scan_clear_pending();
@@ -985,10 +1019,30 @@ void screen_scan_show_status(const char *msg) {
 void screen_scan_flash(bool duplicate) {
     lv_color_t color = duplicate ? lv_palette_main(LV_PALETTE_RED) : lv_palette_main(LV_PALETTE_GREEN);
     lv_obj_set_style_bg_color(s_flash_overlay, color, LV_PART_MAIN);
+
+    flash_rect_anim_cb(s_flash_overlay, 0); // reset to a zero-size point, centered
     lv_obj_clear_flag(s_flash_overlay, LV_OBJ_FLAG_HIDDEN);
-    if (s_flash_timer) lv_timer_del(s_flash_timer);
-    s_flash_timer = lv_timer_create(hide_flash_cb, 600, NULL);
-    lv_timer_set_repeat_count(s_flash_timer, 1);
+
+    // Single LVGL-native animation using its built-in "playback" (grow,
+    // pause, then automatically reverse back to the start value) instead
+    // of a hand-rolled forward-anim -> one-shot-timer -> second-anim chain.
+    // That earlier version crashed on hardware (use-after-free inside
+    // LVGL's own anim_timer — a dangling lv_anim_t got walked after being
+    // freed) when a scan retriggered the sequence mid-flight; this native
+    // single-anim form needs no manual lv_timer_t/lv_anim_del bookkeeping
+    // at all — lv_anim_start() already safely cancels/replaces any prior
+    // in-flight animation for the same var+exec_cb on its own.
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, s_flash_overlay);
+    lv_anim_set_exec_cb(&a, flash_rect_anim_cb);
+    lv_anim_set_values(&a, 0, SCAN_FLASH_SCREEN_H);
+    lv_anim_set_time(&a, SCAN_FLASH_FILL_MS);
+    lv_anim_set_playback_delay(&a, SCAN_FLASH_HOLD_MS);
+    lv_anim_set_playback_time(&a, SCAN_FLASH_UNFILL_MS);
+    lv_anim_set_path_cb(&a, lv_anim_path_linear);
+    lv_anim_set_ready_cb(&a, flash_hide_ready_cb);
+    lv_anim_start(&a);
 }
 
 void screen_scan_refresh_language(void) {

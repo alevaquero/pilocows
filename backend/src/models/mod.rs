@@ -97,6 +97,18 @@ pub struct Vaccination {
     pub next_due_at: Option<String>,
     pub notes: String,
     pub created_at: String,
+    /// Set only for rows fanned out from a handheld session sync — traces
+    /// back to the session_records row that produced this, so its per-tag
+    /// voice note (if any) can be played from here too. NULL for rows
+    /// created directly via the frontend UI.
+    pub session_id: Option<i64>,
+    pub eid: Option<String>,
+    /// Computed via a JOIN onto session_records — see get_animal(). False
+    /// (never NULL) when session_id is NULL. #[sqlx(default)] because the
+    /// health.rs CRUD routes' plain `RETURNING *`/`SELECT *` queries have
+    /// no such column to project — only get_animal()'s explicit JOIN does.
+    #[sqlx(default)]
+    pub has_audio: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -121,6 +133,11 @@ pub struct Pregnancy {
     pub due_date: Option<String>,
     pub notes: String,
     pub created_at: String,
+    /// See Vaccination's session_id/eid/has_audio doc comment.
+    pub session_id: Option<i64>,
+    pub eid: Option<String>,
+    #[sqlx(default)]
+    pub has_audio: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -143,6 +160,11 @@ pub struct Test {
     pub tested_at: String,
     pub notes: String,
     pub created_at: String,
+    /// See Vaccination's session_id/eid/has_audio doc comment.
+    pub session_id: Option<i64>,
+    pub eid: Option<String>,
+    #[sqlx(default)]
+    pub has_audio: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -165,6 +187,11 @@ pub struct Weight {
     pub weighed_at: String,
     pub notes: String,
     pub created_at: String,
+    /// See Vaccination's session_id/eid/has_audio doc comment.
+    pub session_id: Option<i64>,
+    pub eid: Option<String>,
+    #[sqlx(default)]
+    pub has_audio: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -262,6 +289,23 @@ pub struct IncomingScan {
     pub notes: String,
 }
 
+/// A tag scan from a "General" (session_type=0) session — no structured
+/// health data, just the scan itself: when, which session, and whatever
+/// note/voice-note the operator attached to that specific tag at scan time.
+/// Read-only from the frontend's perspective; these rows only ever come from
+/// a handheld sync (see fan_out_session_record's session_type 0 no-op arm —
+/// General has no health table to write into, so this is the only place
+/// that scan is visible from the animal's own page).
+#[derive(Debug, Serialize, FromRow)]
+pub struct GeneralScan {
+    pub session_id: i64,
+    pub session_name: String,
+    pub eid: String,
+    pub scanned_at: String,
+    pub note: String,
+    pub has_audio: bool,
+}
+
 // ─── Full Animal Profile ──────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
@@ -273,6 +317,7 @@ pub struct AnimalProfile {
     pub tests: Vec<Test>,
     pub weights: Vec<Weight>,
     pub removal: Option<Removal>,
+    pub general_scans: Vec<GeneralScan>,
 }
 
 // ─── Reports ─────────────────────────────────────────────────────────────────

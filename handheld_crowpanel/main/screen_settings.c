@@ -7,13 +7,12 @@
 #include "nvs_storage.h"
 #include "app_version.h"
 #include "bsp_display.h"
+#include "ui_icons.h"
 #include "lvgl.h"
 
 static lv_obj_t *s_screen = NULL;
 static lv_obj_t *s_lbl_title = NULL;
-static lv_obj_t *s_lbl_back = NULL;
 static lv_obj_t *s_lbl_language = NULL;
-static lv_obj_t *s_lbl_buzzer = NULL;
 static lv_obj_t *s_lbl_vibrator = NULL;
 static lv_obj_t *s_lbl_brightness = NULL;
 static lv_obj_t *s_lbl_volume = NULL;
@@ -34,7 +33,6 @@ static lv_obj_t *s_lbl_sync_btn = NULL;
 static void refresh_language(void) {
     lv_label_set_text(s_lbl_title, i18n_t(STR_SETTINGS_TITLE));
     lv_label_set_text(s_lbl_language, i18n_t(STR_SETTINGS_LANGUAGE));
-    lv_label_set_text(s_lbl_buzzer, i18n_t(STR_SETTINGS_BUZZER));
     lv_label_set_text(s_lbl_vibrator, i18n_t(STR_SETTINGS_VIBRATOR));
     lv_label_set_text(s_lbl_brightness, i18n_t(STR_SETTINGS_BRIGHTNESS));
     lv_label_set_text(s_lbl_volume, i18n_t(STR_SETTINGS_VOLUME));
@@ -55,17 +53,22 @@ static void refresh_language(void) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-static void save_settings(bool buzzer_on, bool vibrator_on, uint8_t volume) {
+static void save_settings(bool vibrator_on, uint8_t volume, uint8_t mic_gain) {
+    // Loads current settings first so fields this screen no longer sets
+    // (buzzer_enabled — vestigial, kept only so old saved NVS blobs don't
+    // shift byte offsets for the fields after it) are preserved untouched
+    // rather than reset to zero.
+    AppSettings s = {0};
+    nvs_load_settings(&s);
     // Note: i18n.c owns the authoritative language NVS key; this copy is
     // informational only.
-    AppSettings s = {0};
     const char *lang = (i18n_get_language() == LANG_EN) ? "en" : "es";
     s.language[0] = lang[0];
     s.language[1] = lang[1];
     s.language[2] = '\0';
-    s.buzzer_enabled = buzzer_on;
     s.vibrator_enabled = vibrator_on;
     s.speaker_volume = volume;
+    s.mic_gain = mic_gain;
     nvs_save_settings(&s);
 }
 
@@ -80,22 +83,13 @@ static void on_language(lv_event_t *e) {
     ui_manager_refresh_language();
 }
 
-static void on_buzzer(lv_event_t *e) {
-    lv_obj_t *sw = (lv_obj_t *)lv_event_get_target(e);
-    bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
-    feedback_set_buzzer_enabled(on);
-    AppSettings s = {0};
-    nvs_load_settings(&s);
-    save_settings(on, s.vibrator_enabled, s.speaker_volume);
-}
-
 static void on_vibrator(lv_event_t *e) {
     lv_obj_t *sw = (lv_obj_t *)lv_event_get_target(e);
     bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
     feedback_set_vibrator_enabled(on);
     AppSettings s = {0};
     nvs_load_settings(&s);
-    save_settings(s.buzzer_enabled, on, s.speaker_volume);
+    save_settings(on, s.speaker_volume, s.mic_gain);
 }
 
 static void on_brightness(lv_event_t *e) {
@@ -110,11 +104,13 @@ static void on_volume(lv_event_t *e) {
     feedback_set_speaker_volume((uint8_t)val);
     AppSettings s = {0};
     nvs_load_settings(&s);
-    save_settings(s.buzzer_enabled, s.vibrator_enabled, (uint8_t)val);
+    save_settings(s.vibrator_enabled, (uint8_t)val, s.mic_gain);
 }
 
 static void on_test_new_tag(lv_event_t *e) { (void)e; audio_test_new_tag(); }
 static void on_test_duplicate(lv_event_t *e) { (void)e; audio_test_duplicate(); }
+static void on_test_vibrator_new_tag(lv_event_t *e) { (void)e; vibrator_test_new_tag(); }
+static void on_test_vibrator_duplicate(lv_event_t *e) { (void)e; vibrator_test_duplicate(); }
 
 static void on_go_wifi(lv_event_t *e) { (void)e; ui_manager_show(SCREEN_WIFI); }
 static void on_go_vaccines(lv_event_t *e) { (void)e; ui_manager_show(SCREEN_VACCINE_SETTINGS); }
@@ -169,10 +165,7 @@ void screen_settings_create(void) {
     lv_obj_set_style_pad_all(btn_back, 0, LV_PART_MAIN);
     lv_obj_set_ext_click_area(btn_back, 6);
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
-    s_lbl_back = lv_label_create(btn_back);
-    lv_label_set_text(s_lbl_back, LV_SYMBOL_LEFT);
-    lv_obj_set_style_text_font(s_lbl_back, &lv_font_app_30, LV_PART_MAIN);
-    lv_obj_center(s_lbl_back);
+    ui_icon_create(btn_back, UI_SYMBOL_BACK, lv_color_white(), &lv_font_app_30);
 
     s_lbl_title = lv_label_create(hdr);
     lv_label_set_text(s_lbl_title, i18n_t(STR_SETTINGS_TITLE));
@@ -226,23 +219,8 @@ void screen_settings_create(void) {
         row_y += row_h;
     }
 
-    // ── Buzzer ───────────────────────────────────────────────────────────────
     AppSettings saved = {0};
     nvs_load_settings(&saved);
-    {
-        lv_obj_t *row = make_settings_row(panel, row_y, row_h, row_x, row_w, true);
-        s_lbl_buzzer = lv_label_create(row);
-        lv_label_set_text(s_lbl_buzzer, i18n_t(STR_SETTINGS_BUZZER));
-        lv_obj_set_style_text_font(s_lbl_buzzer, row_font, LV_PART_MAIN);
-        lv_obj_align(s_lbl_buzzer, LV_ALIGN_LEFT_MID, 0, 0);
-
-        lv_obj_t *sw = lv_switch_create(row);
-        lv_obj_align(sw, LV_ALIGN_RIGHT_MID, 0, 0);
-        lv_obj_set_ext_click_area(sw, sw_ext);
-        if (saved.buzzer_enabled) lv_obj_add_state(sw, LV_STATE_CHECKED);
-        lv_obj_add_event_cb(sw, on_buzzer, LV_EVENT_VALUE_CHANGED, NULL);
-        row_y += row_h;
-    }
 
     // ── Vibrator ─────────────────────────────────────────────────────────────
     {
@@ -257,6 +235,28 @@ void screen_settings_create(void) {
         lv_obj_set_ext_click_area(sw, sw_ext);
         if (saved.vibrator_enabled) lv_obj_add_state(sw, LV_STATE_CHECKED);
         lv_obj_add_event_cb(sw, on_vibrator, LV_EVENT_VALUE_CHANGED, NULL);
+
+        // Test buttons — same filled-icon look as Test Sounds below, and
+        // always run their pattern regardless of the switch above (see
+        // vibrator_test_new_tag()/vibrator_test_duplicate()), so the motor
+        // and pattern can be checked even with vibration turned off.
+        lv_obj_t *btn_vib_dup = lv_btn_create(row);
+        lv_obj_set_size(btn_vib_dup, 54, 54);
+        lv_obj_set_style_border_width(btn_vib_dup, 0, LV_PART_MAIN);
+        lv_obj_set_style_radius(btn_vib_dup, 4, LV_PART_MAIN);
+        lv_obj_set_ext_click_area(btn_vib_dup, 6);
+        lv_obj_align_to(btn_vib_dup, sw, LV_ALIGN_OUT_LEFT_MID, -14, 0);
+        lv_obj_add_event_cb(btn_vib_dup, on_test_vibrator_duplicate, LV_EVENT_CLICKED, NULL);
+        ui_icon_create(btn_vib_dup, UI_SYMBOL_REPEAT, lv_color_white(), &lv_font_app_36);
+
+        lv_obj_t *btn_vib_new = lv_btn_create(row);
+        lv_obj_set_size(btn_vib_new, 54, 54);
+        lv_obj_set_style_border_width(btn_vib_new, 0, LV_PART_MAIN);
+        lv_obj_set_style_radius(btn_vib_new, 4, LV_PART_MAIN);
+        lv_obj_set_ext_click_area(btn_vib_new, 6);
+        lv_obj_align_to(btn_vib_new, btn_vib_dup, LV_ALIGN_OUT_LEFT_MID, -10, 0);
+        lv_obj_add_event_cb(btn_vib_new, on_test_vibrator_new_tag, LV_EVENT_CLICKED, NULL);
+        ui_icon_create(btn_vib_new, UI_SYMBOL_PLAY, lv_color_white(), &lv_font_app_36);
         row_y += row_h;
     }
 
@@ -312,35 +312,27 @@ void screen_settings_create(void) {
         lv_obj_set_style_text_font(s_lbl_test_sounds, row_font, LV_PART_MAIN);
         lv_obj_align(s_lbl_test_sounds, LV_ALIGN_LEFT_MID, 0, 0);
 
+        // Filled buttons (default theme fill, white icon) — same look as
+        // every other icon button app-wide, e.g. the header back/mic/edit
+        // buttons — rather than a flat transparent button, which read as an
+        // unstyled white box against this row's own white/transparent bg.
         lv_obj_t *btn_dup = lv_btn_create(row);
         lv_obj_set_size(btn_dup, 54, 54);
         lv_obj_align(btn_dup, LV_ALIGN_RIGHT_MID, 0, 0);
-        lv_obj_set_style_bg_opa(btn_dup, LV_OPA_TRANSP, LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(btn_dup, LV_OPA_20, LV_STATE_PRESSED | LV_PART_MAIN);
-        lv_obj_set_style_shadow_width(btn_dup, 0, LV_PART_MAIN);
         lv_obj_set_style_border_width(btn_dup, 0, LV_PART_MAIN);
+        lv_obj_set_style_radius(btn_dup, 4, LV_PART_MAIN);
         lv_obj_set_ext_click_area(btn_dup, 6);
         lv_obj_add_event_cb(btn_dup, on_test_duplicate, LV_EVENT_CLICKED, NULL);
-        lv_obj_t *lbl_dup = lv_label_create(btn_dup);
-        lv_label_set_text(lbl_dup, LV_SYMBOL_LOOP);
-        lv_obj_set_style_text_font(lbl_dup, row_font, LV_PART_MAIN);
-        lv_obj_set_style_text_color(lbl_dup, lv_palette_main(LV_PALETTE_BLUE_GREY), LV_PART_MAIN);
-        lv_obj_center(lbl_dup);
+        ui_icon_create(btn_dup, UI_SYMBOL_REPEAT, lv_color_white(), &lv_font_app_36);
 
         lv_obj_t *btn_new = lv_btn_create(row);
         lv_obj_set_size(btn_new, 54, 54);
         lv_obj_align(btn_new, LV_ALIGN_RIGHT_MID, -64, 0);
-        lv_obj_set_style_bg_opa(btn_new, LV_OPA_TRANSP, LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(btn_new, LV_OPA_20, LV_STATE_PRESSED | LV_PART_MAIN);
-        lv_obj_set_style_shadow_width(btn_new, 0, LV_PART_MAIN);
         lv_obj_set_style_border_width(btn_new, 0, LV_PART_MAIN);
+        lv_obj_set_style_radius(btn_new, 4, LV_PART_MAIN);
         lv_obj_set_ext_click_area(btn_new, 6);
         lv_obj_add_event_cb(btn_new, on_test_new_tag, LV_EVENT_CLICKED, NULL);
-        lv_obj_t *lbl_new = lv_label_create(btn_new);
-        lv_label_set_text(lbl_new, LV_SYMBOL_PLAY);
-        lv_obj_set_style_text_font(lbl_new, row_font, LV_PART_MAIN);
-        lv_obj_set_style_text_color(lbl_new, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN);
-        lv_obj_center(lbl_new);
+        ui_icon_create(btn_new, UI_SYMBOL_PLAY, lv_color_white(), &lv_font_app_36);
         row_y += row_h;
     }
 

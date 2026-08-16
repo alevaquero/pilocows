@@ -102,6 +102,154 @@ fn build_event_data(rec: &IncomingSessionRecord) -> String {
     }
 }
 
+/// Write a session record into the matching animal health table, mirroring
+/// the handheld's session_type (see main/session_storage.h SESSION_TYPE_*):
+/// 0=General (nothing to fan out), 1=Weighing, 2=Vaccination, 3=Pregnancy,
+/// 4=Test, 5=Removal. This is the session-based sync path's counterpart to
+/// `sync::fan_out()` (used by the older `/sync/scans` endpoint, which the
+/// frontend no longer calls) — same target tables and dedup indices
+/// (migrations 0002/0003), just reading from `IncomingSessionRecord`'s
+/// numeric `session_type` instead of `IncomingScan`'s string `event_type`.
+/// Also stamps `session_id`/`eid` onto the row it creates (migration 0006)
+/// so a per-tag voice note on `session_records` — keyed by that same pair —
+/// can be traced back to and played from the Animal Detail page, not just
+/// the Session Detail page.
+async fn fan_out_session_record(
+    pool: &SqlitePool,
+    rec: &IncomingSessionRecord,
+    animal_id: i64,
+    session_id: i64,
+    scanned_at: &str,
+) -> Result<()> {
+    match rec.session_type {
+        1 => {
+            // Weighing
+            if let Some(weight) = rec.weight_kg {
+                if weight > 0.0 {
+                    sqlx::query(
+                        "INSERT INTO weights
+                         (animal_id, weight_kg, weighed_at, notes, session_id, eid)
+                         VALUES (?, ?, ?, ?, ?, ?)
+                         ON CONFLICT(animal_id, weighed_at) DO UPDATE SET
+                             session_id = excluded.session_id,
+                             eid        = excluded.eid",
+                    )
+                    .bind(animal_id)
+                    .bind(weight)
+                    .bind(scanned_at)
+                    .bind(&rec.note)
+                    .bind(session_id)
+                    .bind(&rec.eid)
+                    .execute(pool)
+                    .await?;
+                }
+            }
+        }
+
+        2 => {
+            // Vaccination — comma-separated vaccine names, one row each so
+            // each shows independently.
+            if let Some(vaccines) = &rec.vaccines {
+                for vaccine in vaccines.split(',') {
+                    let vaccine = vaccine.trim();
+                    if vaccine.is_empty() {
+                        continue;
+                    }
+                    sqlx::query(
+                        "INSERT INTO vaccinations
+                         (animal_id, vaccine, administered_at, notes, session_id, eid)
+                         VALUES (?, ?, ?, ?, ?, ?)
+                         ON CONFLICT(animal_id, vaccine, administered_at) DO UPDATE SET
+                             session_id = excluded.session_id,
+                             eid        = excluded.eid",
+                    )
+                    .bind(animal_id)
+                    .bind(vaccine)
+                    .bind(scanned_at)
+                    .bind(&rec.note)
+                    .bind(session_id)
+                    .bind(&rec.eid)
+                    .execute(pool)
+                    .await?;
+                }
+            }
+        }
+
+        3 => {
+            // Pregnancy
+            if let Some(result) = &rec.pregnancy {
+                sqlx::query(
+                    "INSERT INTO pregnancies
+                     (animal_id, result, checked_at, notes, session_id, eid)
+                     VALUES (?, ?, ?, ?, ?, ?)
+                     ON CONFLICT(animal_id, checked_at) DO UPDATE SET
+                         session_id = excluded.session_id,
+                         eid        = excluded.eid",
+                )
+                .bind(animal_id)
+                .bind(result)
+                .bind(scanned_at)
+                .bind(&rec.note)
+                .bind(session_id)
+                .bind(&rec.eid)
+                .execute(pool)
+                .await?;
+            }
+        }
+
+        4 => {
+            // Test
+            if let Some(result) = &rec.test_result {
+                sqlx::query(
+                    "INSERT INTO tests
+                     (animal_id, test_name, result, tested_at, notes, session_id, eid)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)
+                     ON CONFLICT(animal_id, tested_at) DO UPDATE SET
+                         session_id = excluded.session_id,
+                         eid        = excluded.eid",
+                )
+                .bind(animal_id)
+                .bind(rec.test_name.as_deref().unwrap_or(""))
+                .bind(result)
+                .bind(scanned_at)
+                .bind(&rec.note)
+                .bind(session_id)
+                .bind(&rec.eid)
+                .execute(pool)
+                .await?;
+            }
+        }
+
+        5 => {
+            // Removal — INSERT OR IGNORE: if already removed via the UI,
+            // leave it as-is (animal_id is UNIQUE on this table).
+            sqlx::query(
+                "INSERT OR IGNORE INTO removals (animal_id, reason, removed_at, notes)
+                 VALUES (?, 'other', ?, ?)",
+            )
+            .bind(animal_id)
+            .bind(scanned_at)
+            .bind(&rec.note)
+            .execute(pool)
+            .await?;
+
+            sqlx::query(
+                "UPDATE animals SET is_active = 0,
+                 updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+                 WHERE id = ?",
+            )
+            .bind(animal_id)
+            .execute(pool)
+            .await?;
+        }
+
+        // 0 = General carries no structured health data to fan out.
+        _ => {}
+    }
+
+    Ok(())
+}
+
 // ─── POST /api/v1/sessions/sync ───────────────────────────────────────────────
 
 pub async fn sync_session(
@@ -165,6 +313,22 @@ pub async fn sync_session(
         .bind(&audio)
         .execute(&pool)
         .await?;
+
+        // Fan out into the animal's health tables when the tag is assigned
+        // to a known animal — same resolution as the legacy sync path.
+        let animal_id: Option<i64> = sqlx::query_scalar(
+            "SELECT a.id FROM animals a
+             JOIN tags t ON t.id = a.tag_id
+             WHERE t.tag_number = ? AND a.is_active = 1
+             LIMIT 1",
+        )
+        .bind(&rec.eid)
+        .fetch_optional(&pool)
+        .await?;
+
+        if let Some(aid) = animal_id {
+            fan_out_session_record(&pool, rec, aid, session_id, &scanned_at).await?;
+        }
 
         upserted_records += 1;
     }
@@ -251,7 +415,8 @@ pub async fn get_session_note_audio(
             .await?;
 
     let bytes = row.flatten().ok_or(AppError::NotFound)?;
-    Ok((StatusCode::OK, [(header::CONTENT_TYPE, "audio/wav")], bytes))
+    let pcm_wav = crate::audio::to_playable_pcm_wav(&bytes);
+    Ok((StatusCode::OK, [(header::CONTENT_TYPE, "audio/wav")], pcm_wav))
 }
 
 // ─── GET /api/v1/sessions/:id/records/:eid/audio ───────────────────────────────
@@ -270,7 +435,8 @@ pub async fn get_record_audio(
     .await?;
 
     let bytes = row.flatten().ok_or(AppError::NotFound)?;
-    Ok((StatusCode::OK, [(header::CONTENT_TYPE, "audio/wav")], bytes))
+    let pcm_wav = crate::audio::to_playable_pcm_wav(&bytes);
+    Ok((StatusCode::OK, [(header::CONTENT_TYPE, "audio/wav")], pcm_wav))
 }
 
 // ─── PATCH /api/v1/sessions/:id ───────────────────────────────────────────────

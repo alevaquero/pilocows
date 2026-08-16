@@ -122,6 +122,11 @@ esp_err_t session_delete(uint32_t session_id);
 // Update the free-text note for a session
 esp_err_t session_save_note(uint32_t session_id, const char *note);
 
+// Rename a session (edit flow — session_list.c). Type is intentionally not
+// editable this way; only session_create() sets it, for the lifetime of
+// the session.
+esp_err_t session_update_name(uint32_t session_id, const char *name);
+
 // Mark a session as synced (sets session_meta_t.synced = 1). Used by BLE sync.
 esp_err_t session_mark_synced(uint32_t session_id);
 

@@ -1,8 +1,9 @@
 #include "screen_session_list.h"
 #include "app_fonts.h"
 #include "ui_manager.h"
-#include "ui_text_entry.h"
+#include "screen_session_new.h"
 #include "session_storage.h"
+#include "ui_icons.h"
 #include "i18n.h"
 #include "strings_en.h"
 #include "lvgl.h"
@@ -17,7 +18,6 @@ static const char *TAG = "scr_sess_list";
 
 // ── Static label refs ─────────────────────────────────────────────────────────
 static lv_obj_t *s_lbl_title;
-static lv_obj_t *s_lbl_back;
 static lv_obj_t *s_lbl_empty;
 
 // ── List widget ───────────────────────────────────────────────────────────────
@@ -45,12 +45,9 @@ static lv_obj_t *make_icon_btn(lv_obj_t *parent, const char *symbol, lv_color_t 
     lv_obj_set_style_bg_opa(btn, LV_OPA_20, LV_STATE_PRESSED | LV_PART_MAIN);
     lv_obj_set_style_shadow_width(btn, 0, LV_PART_MAIN);
     lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN);
+    lv_obj_set_style_outline_width(btn, 0, LV_PART_MAIN);
     lv_obj_set_ext_click_area(btn, 6);
-    lv_obj_t *lbl = lv_label_create(btn);
-    lv_label_set_text(lbl, symbol);
-    lv_obj_set_style_text_font(lbl, &lv_font_app_28, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl, color, LV_PART_MAIN);
-    lv_obj_center(lbl);
+    ui_icon_create(btn, symbol, color, &lv_font_app_36);
     return btn;
 }
 
@@ -61,26 +58,11 @@ static void on_row_activate(lv_event_t *e) {
     ui_manager_show(SCREEN_SCAN);
 }
 
-static void on_note_confirm(const char *text, void *user_data) {
-    uint32_t id = (uint32_t)(uintptr_t)user_data;
-    session_save_note(id, text);
-    rebuild_list();
-}
-
+// Pencil opens the full session editor (name, text note, voice note — type
+// stays locked). Replaces the separate mic icon this row used to have.
 static void on_row_edit(lv_event_t *e) {
     session_meta_t *meta = (session_meta_t *)lv_event_get_user_data(e);
-    ui_text_entry_cfg_t cfg = {
-        .label = i18n_t(STR_SESSION_NOTE),
-        .initial_text = meta->note,
-        .placeholder = i18n_t(STR_SESSION_NOTE_PLACEHOLDER),
-        .multiline = true,
-        .password = false,
-        .max_length = SESSION_NOTE_MAX - 1,
-        .on_confirm = on_note_confirm,
-        .on_cancel = NULL,
-        .user_data = (void *)(uintptr_t)meta->id,
-    };
-    ui_text_entry_show(&cfg);
+    screen_session_new_edit(meta->id);
 }
 
 static void on_row_delete(lv_event_t *e) {
@@ -130,15 +112,11 @@ static void rebuild_list(void) {
         lv_obj_set_style_text_color(lbl_cnt, lv_palette_main(LV_PALETTE_BLUE_GREY), LV_PART_MAIN);
         lv_obj_align(lbl_cnt, LV_ALIGN_BOTTOM_LEFT, 10, -8);
 
-        lv_obj_t *btn_play = make_icon_btn(row, LV_SYMBOL_PLAY, lv_palette_main(LV_PALETTE_BLUE));
-        lv_obj_align(btn_play, LV_ALIGN_BOTTOM_RIGHT, -140, -8);
-        lv_obj_add_event_cb(btn_play, on_row_activate, LV_EVENT_CLICKED, &s_copy_buf[i]);
-
-        lv_obj_t *btn_edit = make_icon_btn(row, LV_SYMBOL_EDIT, lv_palette_main(LV_PALETTE_BLUE_GREY));
+        lv_obj_t *btn_edit = make_icon_btn(row, UI_SYMBOL_EDIT, lv_palette_main(LV_PALETTE_BLUE_GREY));
         lv_obj_align(btn_edit, LV_ALIGN_BOTTOM_RIGHT, -73, -8);
         lv_obj_add_event_cb(btn_edit, on_row_edit, LV_EVENT_CLICKED, &s_copy_buf[i]);
 
-        lv_obj_t *btn_trash = make_icon_btn(row, LV_SYMBOL_TRASH, lv_palette_main(LV_PALETTE_RED));
+        lv_obj_t *btn_trash = make_icon_btn(row, UI_SYMBOL_TRASH, lv_palette_main(LV_PALETTE_RED));
         lv_obj_align(btn_trash, LV_ALIGN_BOTTOM_RIGHT, -7, -8);
         lv_obj_add_event_cb(btn_trash, on_row_delete, LV_EVENT_CLICKED, &s_copy_buf[i]);
     }
@@ -197,10 +175,7 @@ void screen_session_list_create(void) {
     lv_obj_set_style_pad_all(btn_back, 0, LV_PART_MAIN);
     lv_obj_set_ext_click_area(btn_back, 6);
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
-    s_lbl_back = lv_label_create(btn_back);
-    lv_label_set_text(s_lbl_back, LV_SYMBOL_LEFT);
-    lv_obj_set_style_text_font(s_lbl_back, &lv_font_app_30, LV_PART_MAIN);
-    lv_obj_center(s_lbl_back);
+    ui_icon_create(btn_back, UI_SYMBOL_BACK, lv_color_white(), &lv_font_app_30);
 
     s_lbl_title = lv_label_create(hdr);
     lv_label_set_text(s_lbl_title, i18n_t(STR_SESSION_LIST));

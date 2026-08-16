@@ -5,6 +5,8 @@
 #include "strings_en.h"
 #include "bsp_mic.h"
 #include "bsp_audio.h"
+#include "nvs_storage.h"
+#include "ui_icons.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "lvgl.h"
@@ -13,12 +15,22 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 static const char *TAG = "scr_mic_test";
 
 #define MIC_MAX_RECORD_SECONDS 10
 #define MIC_MAX_SAMPLES (MIC_MAX_RECORD_SECONDS * MIC_SAMPLE_RATE_HZ)
 #define MIC_READ_CHUNK_SAMPLES 512
+// Playback is written to i2s in chunks of this size (instead of one big
+// blocking write) so the level meter has something to sample and animate
+// per chunk while the recording plays back — see screen_audio_note.c.
+#define PLAYBACK_CHUNK_SAMPLES 512
+// Live recording level display only, applied on top of the sqrt scale
+// below — see screen_audio_note.c for why (matches the post-capture
+// normalization boost that makes played-back clips look louder on the
+// meter than the live recording otherwise would).
+#define RECORD_LEVEL_VISUAL_BOOST 3.0f
 
 static lv_obj_t *s_scr = NULL;
 static lv_obj_t *s_lbl_title = NULL;
@@ -27,6 +39,8 @@ static lv_obj_t *s_chart = NULL;
 static lv_chart_series_t *s_chart_series = NULL;
 static lv_obj_t *s_btn_record = NULL;
 static lv_obj_t *s_btn_play = NULL;
+static lv_obj_t *s_lbl_gain_val = NULL;
+static lv_obj_t *s_slider_gain = NULL;
 static lv_timer_t *s_ui_timer = NULL;
 
 static bool s_mic_ready = false;
@@ -38,6 +52,8 @@ static volatile size_t s_rec_samples = 0; // samples captured so far / in the la
 static volatile int s_level_pct = 0;      // 0-100, most recent chunk's peak level
 static TaskHandle_t s_rec_task = NULL;
 static bool s_was_recording = false; // edge-detect recording -> idle in the UI timer
+static volatile bool s_playing = false; // true for the duration of play_task
+static bool s_was_playing = false;      // edge-detect playing -> idle in the UI timer
 
 static void update_status_label(void) {
     if (s_recording) {
@@ -51,6 +67,12 @@ static void update_status_label(void) {
     } else {
         lv_label_set_text(s_lbl_status, i18n_t(STR_MIC_HOLD_TO_RECORD));
     }
+}
+
+static void update_gain_label(int val) {
+    char buf[24];
+    snprintf(buf, sizeof(buf), "%s: %d", i18n_t(STR_MIC_GAIN_LABEL), val);
+    lv_label_set_text(s_lbl_gain_val, buf);
 }
 
 // ── Recording (own FreeRTOS task — never touches LVGL) ──────────────────────
@@ -99,7 +121,12 @@ static void record_task(void *arg) {
             int16_t av = chunk[i] < 0 ? (int16_t)(-chunk[i]) : chunk[i];
             if (av > peak) peak = av;
         }
-        s_level_pct = (peak * 100) / 32767;
+        // Perceptual (sqrt) scale — see screen_audio_note.c's record_task
+        // for why a linear peak/32767 mapping barely moves for normal
+        // (non-clipping) speech, and for RECORD_LEVEL_VISUAL_BOOST.
+        float boosted = (float)peak * RECORD_LEVEL_VISUAL_BOOST;
+        if (boosted > 32767.0f) boosted = 32767.0f;
+        s_level_pct = (int)(sqrtf(boosted / 32767.0f) * 100.0f);
 
         memcpy(&s_rec_buf[total], chunk, got * sizeof(int16_t));
         total += got;
@@ -156,8 +183,23 @@ static void play_task(void *arg) {
 
     set_audio_ctrl(true);
     vTaskDelay(pdMS_TO_TICKS(60)); // let the amp finish its wake-up ramp before real audio
+    s_playing = true;
     size_t written = 0;
-    i2s_channel_write(get_audio_handle(), stereo, n_samples * 2 * sizeof(int16_t), &written, portMAX_DELAY);
+    for (size_t off = 0; off < n_samples; off += PLAYBACK_CHUNK_SAMPLES) {
+        size_t chunk_n = n_samples - off;
+        if (chunk_n > PLAYBACK_CHUNK_SAMPLES) chunk_n = PLAYBACK_CHUNK_SAMPLES;
+
+        int16_t peak = 0;
+        for (size_t i = 0; i < chunk_n; i++) {
+            int16_t av = stereo[2 * (off + i)];
+            if (av < 0) av = (int16_t)(-av);
+            if (av > peak) peak = av;
+        }
+        s_level_pct = (int)(sqrtf((float)peak / 32767.0f) * 100.0f);
+
+        i2s_channel_write(get_audio_handle(), &stereo[2 * off], chunk_n * 2 * sizeof(int16_t), &written, portMAX_DELAY);
+    }
+    s_playing = false;
     vTaskDelay(pdMS_TO_TICKS(80));
     set_audio_ctrl(false);
 
@@ -182,6 +224,21 @@ static void on_play(lv_event_t *e) {
     xTaskCreate(play_task, "mic_play", 3072, NULL, 3, NULL);
 }
 
+// Live gain adjustment: applies immediately (so the next hold-to-record
+// test reflects it right away) and persists to the same NVS field the
+// Settings screen's gain slider reads/writes, so the two stay in sync.
+static void on_gain_changed(lv_event_t *e) {
+    lv_obj_t *slider = (lv_obj_t *)lv_event_get_target(e);
+    int val = lv_slider_get_value(slider);
+    mic_set_gain((uint8_t)val);
+    update_gain_label(val);
+
+    AppSettings s = {0};
+    nvs_load_settings(&s);
+    s.mic_gain = (uint8_t)val;
+    nvs_save_settings(&s);
+}
+
 static void ui_timer_cb(lv_timer_t *t) {
     (void)t;
     if (s_recording) {
@@ -194,6 +251,13 @@ static void ui_timer_cb(lv_timer_t *t) {
         lv_chart_set_all_value(s_chart, s_chart_series, 0);
         update_status_label();
         if (s_rec_samples > 0) lv_obj_clear_state(s_btn_play, LV_STATE_DISABLED);
+    } else if (s_playing) {
+        lv_chart_set_next_value(s_chart, s_chart_series, s_level_pct);
+        s_was_playing = true;
+    } else if (s_was_playing) {
+        // Playback just finished (edge from playing -> idle).
+        s_was_playing = false;
+        lv_chart_set_all_value(s_chart, s_chart_series, 0);
     }
 }
 
@@ -241,10 +305,7 @@ void screen_mic_test_create(void) {
     lv_obj_set_style_pad_all(btn_back, 0, LV_PART_MAIN);
     lv_obj_set_ext_click_area(btn_back, 6);
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_back = lv_label_create(btn_back);
-    lv_label_set_text(lbl_back, LV_SYMBOL_LEFT);
-    lv_obj_set_style_text_font(lbl_back, &lv_font_app_30, LV_PART_MAIN);
-    lv_obj_center(lbl_back);
+    ui_icon_create(btn_back, UI_SYMBOL_BACK, lv_color_white(), &lv_font_app_30);
 
     s_lbl_title = lv_label_create(hdr);
     lv_label_set_text(s_lbl_title, i18n_t(STR_MIC_TEST_TITLE));
@@ -298,11 +359,26 @@ void screen_mic_test_create(void) {
     lv_obj_set_style_bg_color(s_btn_play, lv_palette_main(LV_PALETTE_BLUE), LV_PART_MAIN);
     lv_obj_add_state(s_btn_play, LV_STATE_DISABLED);
     lv_obj_add_event_cb(s_btn_play, on_play, LV_EVENT_CLICKED, NULL);
-    lv_obj_t *lbl_play = lv_label_create(s_btn_play);
-    lv_label_set_text(lbl_play, LV_SYMBOL_PLAY);
-    lv_obj_set_style_text_font(lbl_play, &lv_font_app_30, LV_PART_MAIN);
-    lv_obj_set_style_text_color(lbl_play, lv_color_white(), LV_PART_MAIN);
-    lv_obj_center(lbl_play);
+    ui_icon_create(s_btn_play, UI_SYMBOL_PLAY, lv_color_white(), &lv_font_app_44);
+
+    // ── Gain control (adjust and immediately re-test with the meter above) ──
+    s_lbl_gain_val = lv_label_create(s_scr);
+    lv_obj_set_style_text_font(s_lbl_gain_val, &lv_font_app_24, LV_PART_MAIN);
+    lv_obj_set_style_text_align(s_lbl_gain_val, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_width(s_lbl_gain_val, 440);
+    lv_obj_set_pos(s_lbl_gain_val, 20, 700);
+
+    uint8_t gain = mic_get_gain();
+    update_gain_label(gain);
+
+    s_slider_gain = lv_slider_create(s_scr);
+    lv_obj_set_size(s_slider_gain, 300, 24);
+    lv_obj_set_pos(s_slider_gain, 90, 736);
+    lv_obj_set_ext_click_area(s_slider_gain, 20);
+    lv_slider_set_range(s_slider_gain, MIC_GAIN_MIN, MIC_GAIN_MAX);
+    lv_slider_set_value(s_slider_gain, gain, LV_ANIM_OFF);
+    lv_obj_add_event_cb(s_slider_gain, on_gain_changed, LV_EVENT_VALUE_CHANGED, NULL);
+    if (!s_mic_ready) lv_obj_add_state(s_slider_gain, LV_STATE_DISABLED);
 
     s_ui_timer = lv_timer_create(ui_timer_cb, 100, NULL);
 
@@ -316,4 +392,5 @@ void screen_mic_test_load(void) {
 void screen_mic_test_refresh_language(void) {
     lv_label_set_text(s_lbl_title, i18n_t(STR_MIC_TEST_TITLE));
     update_status_label();
+    update_gain_label(lv_slider_get_value(s_slider_gain));
 }

@@ -4,22 +4,66 @@
 #include "i18n.h"
 #include "strings_en.h"
 #include "soft_rtc.h"
+#include "ui_icons.h"
 #include "lvgl.h"
+#include <stdio.h>
 #include <time.h>
 #include <sys/time.h>
 
 static lv_obj_t *s_scr = NULL;
-static lv_obj_t *s_lbl_back = NULL;
 static lv_obj_t *s_lbl_title = NULL;
 static lv_obj_t *s_lbl_cancel = NULL;
 static lv_obj_t *s_lbl_set = NULL;
 
-// Spinbox refs, re-seeded with the current time each time the screen loads.
+// Spinbox refs, re-seeded with the current (local) time each time the
+// screen loads.
 static lv_obj_t *s_sb_year = NULL;
 static lv_obj_t *s_sb_month = NULL;
 static lv_obj_t *s_sb_day = NULL;
 static lv_obj_t *s_sb_hour = NULL;
 static lv_obj_t *s_sb_min = NULL;
+
+// ── Timezone control ─────────────────────────────────────────────────────────
+// Staged like the spinboxes above — only actually persisted (via
+// soft_rtc_set_tz_offset_min) when "Set Time" is pressed, so Cancel truly
+// discards every change on this screen, not just the date/time fields.
+#define TZ_STEP_MIN (60)
+#define TZ_MIN_MIN  (-720) // UTC-12:00
+#define TZ_MAX_MIN  (840)  // UTC+14:00
+
+static int16_t s_staged_tz_offset_min = 0;
+static lv_obj_t *s_lbl_tz_title = NULL;
+static lv_obj_t *s_lbl_tz_value = NULL;
+
+static void format_tz_offset(int16_t minutes, char *buf, size_t buf_len) {
+    if (minutes == 0) {
+        snprintf(buf, buf_len, "UTC");
+        return;
+    }
+    char sign = minutes < 0 ? '-' : '+';
+    int abs_min = minutes < 0 ? -minutes : minutes;
+    snprintf(buf, buf_len, "UTC%c%02d:%02d", sign, abs_min / 60, abs_min % 60);
+}
+
+static void update_tz_value_label(void) {
+    char buf[16];
+    format_tz_offset(s_staged_tz_offset_min, buf, sizeof(buf));
+    lv_label_set_text(s_lbl_tz_value, buf);
+}
+
+static void on_tz_minus(lv_event_t *e) {
+    (void)e;
+    if (s_staged_tz_offset_min - TZ_STEP_MIN < TZ_MIN_MIN) return;
+    s_staged_tz_offset_min -= TZ_STEP_MIN;
+    update_tz_value_label();
+}
+
+static void on_tz_plus(lv_event_t *e) {
+    (void)e;
+    if (s_staged_tz_offset_min + TZ_STEP_MIN > TZ_MAX_MIN) return;
+    s_staged_tz_offset_min += TZ_STEP_MIN;
+    update_tz_value_label();
+}
 
 static void on_back(lv_event_t *e) { (void)e; ui_manager_show(SCREEN_SETTINGS); }
 
@@ -32,8 +76,11 @@ static void on_set(lv_event_t *e) {
     tm.tm_hour = lv_spinbox_get_value(s_sb_hour);
     tm.tm_min = lv_spinbox_get_value(s_sb_min);
     tm.tm_sec = 0;
-    time_t t = mktime(&tm);
-    soft_rtc_set_time(t);
+    // Order matters: persist the offset first so soft_rtc_set_local_tm()
+    // (which reads it back from NVS) converts using the new value, not a
+    // stale one.
+    soft_rtc_set_tz_offset_min(s_staged_tz_offset_min);
+    soft_rtc_set_local_tm(&tm);
     ui_manager_show(SCREEN_SETTINGS);
 }
 
@@ -67,9 +114,7 @@ static lv_obj_t *make_spinbox_col(lv_obj_t *parent, const char *label,
     lv_obj_t *btn_up = lv_btn_create(parent);
     lv_obj_set_size(btn_up, col_w, btn_h);
     lv_obj_set_pos(btn_up, x, y + lbl_h + 3);
-    lv_obj_t *lbl_up = lv_label_create(btn_up);
-    lv_label_set_text(lbl_up, LV_SYMBOL_UP);
-    lv_obj_center(lbl_up);
+    ui_icon_create(btn_up, UI_SYMBOL_UP, lv_color_white(), &lv_font_app_30);
 
     lv_obj_t *sb = lv_spinbox_create(parent);
     lv_spinbox_set_range(sb, min_val, max_val);
@@ -90,9 +135,7 @@ static lv_obj_t *make_spinbox_col(lv_obj_t *parent, const char *label,
     lv_obj_t *btn_dn = lv_btn_create(parent);
     lv_obj_set_size(btn_dn, col_w, btn_h);
     lv_obj_set_pos(btn_dn, x, y + lbl_h + 3 + btn_h + 3 + sb_h + 3);
-    lv_obj_t *lbl_dn = lv_label_create(btn_dn);
-    lv_label_set_text(lbl_dn, LV_SYMBOL_DOWN);
-    lv_obj_center(lbl_dn);
+    ui_icon_create(btn_dn, UI_SYMBOL_DOWN, lv_color_white(), &lv_font_app_30);
 
     lv_obj_add_event_cb(btn_up, on_spinbox_up, LV_EVENT_CLICKED, sb);
     lv_obj_add_event_cb(btn_dn, on_spinbox_down, LV_EVENT_CLICKED, sb);
@@ -102,13 +145,16 @@ static lv_obj_t *make_spinbox_col(lv_obj_t *parent, const char *label,
 
 static void on_screen_loaded(lv_event_t *e) {
     (void)e;
-    time_t now = time(NULL);
-    struct tm *cur = localtime(&now);
-    lv_spinbox_set_value(s_sb_year, cur->tm_year + 1900);
-    lv_spinbox_set_value(s_sb_month, cur->tm_mon + 1);
-    lv_spinbox_set_value(s_sb_day, cur->tm_mday);
-    lv_spinbox_set_value(s_sb_hour, cur->tm_hour);
-    lv_spinbox_set_value(s_sb_min, cur->tm_min);
+    s_staged_tz_offset_min = soft_rtc_get_tz_offset_min();
+    update_tz_value_label();
+
+    struct tm cur;
+    soft_rtc_get_local_tm(&cur);
+    lv_spinbox_set_value(s_sb_year, cur.tm_year + 1900);
+    lv_spinbox_set_value(s_sb_month, cur.tm_mon + 1);
+    lv_spinbox_set_value(s_sb_day, cur.tm_mday);
+    lv_spinbox_set_value(s_sb_hour, cur.tm_hour);
+    lv_spinbox_set_value(s_sb_min, cur.tm_min);
 }
 
 void screen_datetime_create(void) {
@@ -135,10 +181,7 @@ void screen_datetime_create(void) {
     lv_obj_set_style_pad_all(btn_back, 0, LV_PART_MAIN);
     lv_obj_set_ext_click_area(btn_back, 6);
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
-    s_lbl_back = lv_label_create(btn_back);
-    lv_label_set_text(s_lbl_back, LV_SYMBOL_LEFT);
-    lv_obj_set_style_text_font(s_lbl_back, &lv_font_app_30, LV_PART_MAIN);
-    lv_obj_center(s_lbl_back);
+    ui_icon_create(btn_back, UI_SYMBOL_BACK, lv_color_white(), &lv_font_app_30);
 
     s_lbl_title = lv_label_create(hdr);
     lv_label_set_text(s_lbl_title, i18n_t(STR_SETTINGS_DATETIME));
@@ -146,27 +189,64 @@ void screen_datetime_create(void) {
     lv_obj_set_style_text_color(s_lbl_title, lv_color_white(), LV_PART_MAIN);
     lv_obj_align(s_lbl_title, LV_ALIGN_CENTER, 0, 0);
 
-    // ── Spinbox rows: Year/Month/Day, then Hour/Minute ───────────────────────
-    time_t now = time(NULL);
-    struct tm *cur = localtime(&now);
+    // ── Timezone row, then spinbox rows: Year/Month/Day, then Hour/Minute ───
+    struct tm cur_tm;
+    soft_rtc_get_local_tm(&cur_tm);
+    struct tm *cur = &cur_tm;
 
     const int header_h = 80;
-    const int col_h = 246; // label + up-btn + spinbox + down-btn stack height
+    const int tz_h = 64;    // Timezone row: title label + minus/value/plus controls
+    const int col_h = 246;  // label + up-btn + spinbox + down-btn stack height
     const int row_gap = 20;
     const int btn_w = 180, btn_h = 60, btn_gap = 20;
     const int margin_bottom = 30;
+    const int inner_w = 432; // 480 - 2*24 margin
+    const int margin_x = 24;
 
-    // Cancel/Set Time sit near the bottom of the screen; the two spinbox
-    // rows are vertically centered in the remaining space above them.
+    // Cancel/Set Time sit near the bottom of the screen; the timezone row
+    // and the two spinbox rows are vertically centered as one block in the
+    // remaining space above them.
     const int btn_y = 800 - margin_bottom - btn_h;
-    const int block_h = col_h * 2 + row_gap;
-    const int top1 = header_h + (btn_y - row_gap - header_h - block_h) / 2;
+    const int block_h = tz_h + row_gap + col_h * 2 + row_gap;
+    const int top_tz = header_h + (btn_y - row_gap - header_h - block_h) / 2;
+    const int top1 = top_tz + tz_h + row_gap;
     const int top2 = top1 + col_h + row_gap;
     const int w4 = 150;
     const int w2 = 113;
     const int col_gap = 7;
-    const int inner_w = 432; // 480 - 2*24 margin
-    const int margin_x = 24;
+
+    // ── Timezone: title label + minus/value/plus row ─────────────────────────
+    s_lbl_tz_title = lv_label_create(s_scr);
+    lv_label_set_text(s_lbl_tz_title, i18n_t(STR_DATETIME_TIMEZONE));
+    lv_obj_set_style_text_font(s_lbl_tz_title, &lv_font_app_20, LV_PART_MAIN);
+    lv_obj_set_style_text_align(s_lbl_tz_title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_size(s_lbl_tz_title, inner_w, 20);
+    lv_obj_set_pos(s_lbl_tz_title, margin_x, top_tz);
+
+    const int tz_ctrl_w = 44, tz_val_w = 200, tz_ctrl_gap = 8;
+    const int tz_span = tz_ctrl_w + tz_ctrl_gap + tz_val_w + tz_ctrl_gap + tz_ctrl_w;
+    const int tz_x = margin_x + (inner_w - tz_span) / 2;
+    const int tz_ctrl_y = top_tz + 24;
+
+    lv_obj_t *btn_tz_minus = lv_btn_create(s_scr);
+    lv_obj_set_size(btn_tz_minus, tz_ctrl_w, tz_ctrl_w);
+    lv_obj_set_pos(btn_tz_minus, tz_x, tz_ctrl_y);
+    lv_obj_add_event_cb(btn_tz_minus, on_tz_minus, LV_EVENT_CLICKED, NULL);
+    ui_icon_create(btn_tz_minus, UI_SYMBOL_DOWN, lv_color_white(), &lv_font_app_28);
+
+    s_lbl_tz_value = lv_label_create(s_scr);
+    lv_label_set_long_mode(s_lbl_tz_value, LV_LABEL_LONG_CLIP); // never wrap to a 2nd (invisible) line
+    lv_obj_set_style_text_font(s_lbl_tz_value, &lv_font_app_28, LV_PART_MAIN);
+    lv_obj_set_style_text_align(s_lbl_tz_value, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_size(s_lbl_tz_value, tz_val_w, tz_ctrl_w);
+    lv_obj_set_pos(s_lbl_tz_value, tz_x + tz_ctrl_w + tz_ctrl_gap, tz_ctrl_y);
+    lv_obj_set_style_pad_ver(s_lbl_tz_value, (tz_ctrl_w - 32) / 2, LV_PART_MAIN);
+
+    lv_obj_t *btn_tz_plus = lv_btn_create(s_scr);
+    lv_obj_set_size(btn_tz_plus, tz_ctrl_w, tz_ctrl_w);
+    lv_obj_set_pos(btn_tz_plus, tz_x + tz_ctrl_w + tz_ctrl_gap + tz_val_w + tz_ctrl_gap, tz_ctrl_y);
+    lv_obj_add_event_cb(btn_tz_plus, on_tz_plus, LV_EVENT_CLICKED, NULL);
+    ui_icon_create(btn_tz_plus, UI_SYMBOL_UP, lv_color_white(), &lv_font_app_28);
 
     // Row 1: Year | Month | Day
     const int span1 = w4 + col_gap + w2 + col_gap + w2;
@@ -217,4 +297,5 @@ void screen_datetime_refresh_language(void) {
     lv_label_set_text(s_lbl_title, i18n_t(STR_SETTINGS_DATETIME));
     lv_label_set_text(s_lbl_cancel, i18n_t(STR_BTN_CANCEL));
     lv_label_set_text(s_lbl_set, i18n_t(STR_SETTINGS_SET_TIME));
+    lv_label_set_text(s_lbl_tz_title, i18n_t(STR_DATETIME_TIMEZONE));
 }

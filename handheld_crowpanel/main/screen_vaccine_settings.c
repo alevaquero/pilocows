@@ -3,6 +3,7 @@
 #include "ui_manager.h"
 #include "ui_text_entry.h"
 #include "session_storage.h"
+#include "ui_icons.h"
 #include "i18n.h"
 #include "strings_en.h"
 #include "lvgl.h"
@@ -13,9 +14,7 @@ static const char *TAG = "scr_vax";
 
 // ── Static label refs ─────────────────────────────────────────────────────────
 static lv_obj_t *s_lbl_title;
-static lv_obj_t *s_lbl_back;
 static lv_obj_t *s_lbl_empty;
-static lv_obj_t *s_lbl_btn_add;
 
 // ── List ──────────────────────────────────────────────────────────────────────
 static lv_obj_t *s_list;
@@ -74,13 +73,10 @@ static void rebuild_list(void) {
         lv_obj_set_style_bg_opa(btn_del, LV_OPA_20, LV_STATE_PRESSED | LV_PART_MAIN);
         lv_obj_set_style_shadow_width(btn_del, 0, LV_PART_MAIN);
         lv_obj_set_style_border_width(btn_del, 0, LV_PART_MAIN);
+        lv_obj_set_style_outline_width(btn_del, 0, LV_PART_MAIN);
         lv_obj_set_ext_click_area(btn_del, 6);
 
-        lv_obj_t *lbl_del = lv_label_create(btn_del);
-        lv_label_set_text(lbl_del, LV_SYMBOL_TRASH);
-        lv_obj_set_style_text_color(lbl_del, lv_palette_main(LV_PALETTE_RED), LV_PART_MAIN);
-        lv_obj_set_style_text_font(lbl_del, &lv_font_app_28, LV_PART_MAIN);
-        lv_obj_center(lbl_del);
+        ui_icon_create(btn_del, UI_SYMBOL_TRASH, lv_palette_main(LV_PALETTE_RED), &lv_font_app_36);
 
         lv_obj_add_event_cb(btn_del, on_row_delete, LV_EVENT_CLICKED, &s_id_buf[i]);
     }
@@ -161,10 +157,7 @@ void screen_vaccine_settings_create(void) {
     lv_obj_set_style_pad_all(btn_back, 0, LV_PART_MAIN);
     lv_obj_set_ext_click_area(btn_back, 6);
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
-    s_lbl_back = lv_label_create(btn_back);
-    lv_label_set_text(s_lbl_back, LV_SYMBOL_LEFT);
-    lv_obj_set_style_text_font(s_lbl_back, &lv_font_app_30, LV_PART_MAIN);
-    lv_obj_center(s_lbl_back);
+    ui_icon_create(btn_back, UI_SYMBOL_BACK, lv_color_white(), &lv_font_app_30);
 
     s_lbl_title = lv_label_create(s_hdr);
     lv_label_set_text(s_lbl_title, i18n_t(STR_VACCINES_TITLE));
@@ -180,10 +173,7 @@ void screen_vaccine_settings_create(void) {
     lv_obj_set_style_pad_all(btn_add, 0, LV_PART_MAIN);
     lv_obj_set_ext_click_area(btn_add, 6);
     lv_obj_add_event_cb(btn_add, on_add_btn, LV_EVENT_CLICKED, NULL);
-    s_lbl_btn_add = lv_label_create(btn_add);
-    lv_label_set_text(s_lbl_btn_add, LV_SYMBOL_PLUS);
-    lv_obj_set_style_text_font(s_lbl_btn_add, &lv_font_app_30, LV_PART_MAIN);
-    lv_obj_center(s_lbl_btn_add);
+    ui_icon_create(btn_add, UI_SYMBOL_PLUS, lv_color_white(), &lv_font_app_30);
 
     // ── Empty label ───────────────────────────────────────────────────────────
     s_lbl_empty = lv_label_create(s_scr);

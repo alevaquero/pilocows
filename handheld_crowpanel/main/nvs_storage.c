@@ -1,5 +1,6 @@
 #include "nvs_storage.h"
 #include "nvs_flash.h"
+#include "bsp_mic.h"
 #include "esp_log.h"
 #include <string.h>
 
@@ -18,13 +19,18 @@ esp_err_t nvs_load_settings(AppSettings *settings) {
         settings->buzzer_enabled = true;
         settings->vibrator_enabled = true;
         settings->speaker_volume = DEFAULT_SPEAKER_VOLUME;
+        settings->mic_gain = MIC_GAIN_DEFAULT;
+        settings->tz_offset_min = 0;
         return ESP_OK;
     }
 
-    // Pre-fill defaults before reading: a blob saved before speaker_volume
-    // existed is smaller than sizeof(AppSettings), so nvs_get_blob only
-    // overwrites the bytes it actually has, leaving this field untouched.
+    // Pre-fill defaults before reading: a blob saved before speaker_volume/
+    // mic_gain/tz_offset_min existed is smaller than sizeof(AppSettings), so
+    // nvs_get_blob only overwrites the bytes it actually has, leaving these
+    // untouched.
     settings->speaker_volume = DEFAULT_SPEAKER_VOLUME;
+    settings->mic_gain = MIC_GAIN_DEFAULT;
+    settings->tz_offset_min = 0;
     size_t required_size = sizeof(AppSettings);
     err = nvs_get_blob(handle, NVS_KEY_SETTINGS, settings, &required_size);
 
@@ -34,6 +40,8 @@ esp_err_t nvs_load_settings(AppSettings *settings) {
         settings->buzzer_enabled = true;
         settings->vibrator_enabled = true;
         settings->speaker_volume = DEFAULT_SPEAKER_VOLUME;
+        settings->mic_gain = MIC_GAIN_DEFAULT;
+        settings->tz_offset_min = 0;
         err = ESP_OK;
     } else if (err != ESP_OK) {
         ESP_LOGE(TAG, "Error reading settings: %s", esp_err_to_name(err));

@@ -9,8 +9,8 @@ use crate::{
     db,
     error::{AppError, Result},
     models::{
-        Animal, AnimalProfile, AnimalQuery, AnimalWithTag, CreateAnimal, PatchAnimal, Pregnancy,
-        Removal, Test, Vaccination, Weight,
+        Animal, AnimalProfile, AnimalQuery, AnimalWithTag, CreateAnimal, GeneralScan, PatchAnimal,
+        Pregnancy, Removal, Test, Vaccination, Weight,
     },
 };
 
@@ -62,29 +62,46 @@ pub async fn get_animal(
     .await?
     .ok_or(AppError::NotFound)?;
 
+    // Each of these LEFT JOINs back onto session_records via the
+    // (session_id, eid) link fan_out_session_record() stamps on rows it
+    // creates from a handheld sync (see migration 0006) — has_audio is
+    // false/absent-audio for rows with no session link (created directly
+    // via the frontend UI) since the JOIN simply finds nothing to match.
     let vaccinations = sqlx::query_as::<_, Vaccination>(
-        "SELECT * FROM vaccinations WHERE animal_id = ? ORDER BY administered_at DESC",
+        "SELECT v.*, (sr.audio IS NOT NULL) AS has_audio
+         FROM vaccinations v
+         LEFT JOIN session_records sr ON sr.session_id = v.session_id AND sr.eid = v.eid
+         WHERE v.animal_id = ? ORDER BY v.administered_at DESC",
     )
     .bind(id)
     .fetch_all(&pool)
     .await?;
 
     let pregnancies = sqlx::query_as::<_, Pregnancy>(
-        "SELECT * FROM pregnancies WHERE animal_id = ? ORDER BY checked_at DESC",
+        "SELECT p.*, (sr.audio IS NOT NULL) AS has_audio
+         FROM pregnancies p
+         LEFT JOIN session_records sr ON sr.session_id = p.session_id AND sr.eid = p.eid
+         WHERE p.animal_id = ? ORDER BY p.checked_at DESC",
     )
     .bind(id)
     .fetch_all(&pool)
     .await?;
 
     let tests = sqlx::query_as::<_, Test>(
-        "SELECT * FROM tests WHERE animal_id = ? ORDER BY tested_at DESC",
+        "SELECT te.*, (sr.audio IS NOT NULL) AS has_audio
+         FROM tests te
+         LEFT JOIN session_records sr ON sr.session_id = te.session_id AND sr.eid = te.eid
+         WHERE te.animal_id = ? ORDER BY te.tested_at DESC",
     )
     .bind(id)
     .fetch_all(&pool)
     .await?;
 
     let weights = sqlx::query_as::<_, Weight>(
-        "SELECT * FROM weights WHERE animal_id = ? ORDER BY weighed_at DESC",
+        "SELECT w.*, (sr.audio IS NOT NULL) AS has_audio
+         FROM weights w
+         LEFT JOIN session_records sr ON sr.session_id = w.session_id AND sr.eid = w.eid
+         WHERE w.animal_id = ? ORDER BY w.weighed_at DESC",
     )
     .bind(id)
     .fetch_all(&pool)
@@ -95,6 +112,21 @@ pub async fn get_animal(
         .fetch_optional(&pool)
         .await?;
 
+    // General (session_type=0) scans have no health table of their own —
+    // the only place this animal's General-session history is visible.
+    let general_scans = sqlx::query_as::<_, GeneralScan>(
+        "SELECT r.session_id, s.name AS session_name, r.eid, r.scanned_at, r.note,
+                (r.audio IS NOT NULL) AS has_audio
+         FROM session_records r
+         JOIN sessions s ON s.id = r.session_id
+         JOIN tags t ON t.tag_number = r.eid
+         WHERE t.id = (SELECT tag_id FROM animals WHERE id = ?) AND s.type = 0
+         ORDER BY r.scanned_at DESC",
+    )
+    .bind(id)
+    .fetch_all(&pool)
+    .await?;
+
     Ok(Json(AnimalProfile {
         animal,
         vaccinations,
@@ -102,13 +134,14 @@ pub async fn get_animal(
         tests,
         weights,
         removal,
+        general_scans,
     }))
 }
 
 pub async fn create_animal(
     State(pool): State<SqlitePool>,
     Json(body): Json<CreateAnimal>,
-) -> Result<(StatusCode, Json<Animal>)> {
+) -> Result<(StatusCode, Json<AnimalWithTag>)> {
     // Verify tag exists
     let exists: bool =
         sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tags WHERE id = ?)")
@@ -143,6 +176,26 @@ pub async fn create_animal(
     // Link any scan_events that arrived before this animal was registered and
     // fan them out into the typed health tables (weights, vaccinations, etc.)
     db::backfill_scan_events(&pool, animal.id, &tag_number).await?;
+    // Same, for the newer session-based sync path (session_records) — see
+    // backfill_session_records' doc comment for why this is also needed.
+    db::backfill_session_records(&pool, animal.id, &tag_number).await?;
+
+    // Respond with the tag_number joined in (like list/get_animal already
+    // do) — the plain Animal row alone left the frontend's list showing a
+    // blank EID for the newly-registered animal until it reloaded the page.
+    let animal = AnimalWithTag {
+        id: animal.id,
+        tag_id: animal.tag_id,
+        tag_number,
+        breed: animal.breed,
+        category: animal.category,
+        sex: animal.sex,
+        dob: animal.dob,
+        notes: animal.notes,
+        is_active: animal.is_active,
+        created_at: animal.created_at,
+        updated_at: animal.updated_at,
+    };
 
     Ok((StatusCode::CREATED, Json(animal)))
 }

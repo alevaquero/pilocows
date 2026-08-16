@@ -218,14 +218,22 @@ are ever brought up (see `main.c` `app_main()` ordering and `bsp_sd.c`).
 | DOWN     | 31   |
 | SELECT   | 32   |
 
-#### Buzzer & Vibrator (LEDC/PWM, `feedback_driver.c`)
+#### Vibrator (LEDC/PWM, `feedback_driver.c`)
 | Function | GPIO |
 |----------|------|
-| Buzzer   | 47   |
 | Vibrator | 30   |
 
-#### TBD (Requires Hardware Inspection)
-- RTC (DS3231 I2C address)
+No buzzer on this board — scan confirmation sounds play through the
+onboard speaker (`bsp_audio`) instead. GPIO 47 (formerly buzzer) is free.
+
+#### RTC (DS3231, `peripheral/bsp_rtc`)
+I2C address `0x68`. Shares the existing I2C bus (SDA=GPIO45, SCL=GPIO46 —
+same bus as touch and STC8H1KXX) via `bsp_i2c`'s `i2c_dev_register()`; no
+dedicated pins. Wire the module to the board's external I2C header. Ported
+from the SC01 Plus handheld's driver (`handheld/src/rtc/rtc.cpp`), adapted
+from that board's own dedicated I2C bus to this board's shared one.
+`main/soft_rtc.c` prefers this hardware RTC when present, falling back to
+an NVS-persisted last-known time otherwise.
 
 ## System Architecture
 

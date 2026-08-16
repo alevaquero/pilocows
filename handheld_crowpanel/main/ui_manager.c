@@ -34,8 +34,9 @@ void ui_manager_init(void) {
     screen_mic_test_create();
     screen_audio_note_create();
 
-    // Show home screen
-    ui_manager_show(SCREEN_SESSION_MENU);
+    // Deliberately doesn't show a screen here — main.c keeps the boot
+    // splash (screen_splash.c) up through the rest of app_main()'s init
+    // work and switches to SCREEN_SESSION_MENU itself once boot completes.
     ESP_LOGI(TAG, "UI manager initialized");
 }
 

@@ -39,11 +39,11 @@
 #define STR_DATETIME_DAY        "Day"
 #define STR_DATETIME_HOUR       "Hour"
 #define STR_DATETIME_MIN        "Min"
+#define STR_DATETIME_TIMEZONE   "Timezone"
 
 // Settings screen
 #define STR_SETTINGS_TITLE      "Settings"
 #define STR_SETTINGS_LANGUAGE   "Language"
-#define STR_SETTINGS_BUZZER     "Buzzer"
 #define STR_SETTINGS_VIBRATOR   "Vibrator"
 #define STR_SETTINGS_BRIGHTNESS "Brightness"
 #define STR_SETTINGS_VOLUME     "Volume"
@@ -77,13 +77,14 @@
 #define STR_BLE_SYNC_DONE       "Sync complete"
 #define STR_BLE_SYNC_FAILED     "Sync failed"
 
-// Mic recording test
-#define STR_SETTINGS_MIC_TEST      "Test Recording"
-#define STR_MIC_TEST_TITLE         "Test Recording"
+// Mic recording test + gain tuning (single combined screen)
+#define STR_SETTINGS_MIC_TEST      "Microphone"
+#define STR_MIC_TEST_TITLE         "Microphone"
 #define STR_MIC_HOLD_TO_RECORD     "Hold to record"
 #define STR_MIC_RECORDING          "Recording..."
 #define STR_MIC_RECORDED           "Recorded"
 #define STR_MIC_UNAVAILABLE        "Microphone unavailable"
+#define STR_MIC_GAIN_LABEL         "Gain"
 
 // Audio note recorder (reusable screen)
 #define STR_AUDIO_NOTE_HAS_RECORDING "Voice note recorded"
@@ -92,6 +93,7 @@
 // Sessions — menu / list
 #define STR_SESSION_TITLE           "Sessions"
 #define STR_SESSION_NEW             "New Session"
+#define STR_SESSION_EDIT            "Edit Session"
 #define STR_SESSION_RESUME          "Resume Session"
 #define STR_SESSION_LIST            "Session List"
 #define STR_SESSION_NONE            "No active session"
@@ -102,6 +104,7 @@
 #define STR_SESSION_CONFIRM_DELETE  "Delete this session?"
 #define STR_SESSION_DISCARD         "Discard"
 #define STR_SESSION_CONFIRM_DISCARD "Discard this new session?"
+#define STR_SESSION_CONFIRM_DISCARD_EDIT "Discard these changes?"
 
 // Sessions — create
 #define STR_SESSION_TYPE            "Type"
@@ -140,6 +143,7 @@
 #define STR_NOTE_PLACEHOLDER        "Add animal note..."
 #define STR_SESSION_NOTE            "Session note"
 #define STR_SESSION_NOTE_PLACEHOLDER "Add session note..."
+#define STR_SESSION_VOICE_NOTE      "Voice Note"
 #define STR_EDIT_SESSION_NOTE       "Edit session note"
 
 // Vaccines settings

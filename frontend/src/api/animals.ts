@@ -15,12 +15,24 @@ export interface Animal {
   updated_at: string
 }
 
+// A tag scan from a "General" (no structured health data) session — read-only,
+// only ever produced by a handheld sync. See backend's GeneralScan model.
+export interface GeneralScan {
+  session_id: number
+  session_name: string
+  eid: string
+  scanned_at: string
+  note: string
+  has_audio: boolean
+}
+
 export interface AnimalProfile extends Animal {
   vaccinations: Vaccination[]
   pregnancies: Pregnancy[]
   tests: Test[]
   weights: Weight[]
   removal: Removal | null
+  general_scans: GeneralScan[]
 }
 
 export interface CreateAnimalPayload {

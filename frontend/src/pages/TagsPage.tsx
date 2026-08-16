@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { tagsApi, type Tag, type TagStatus } from '../api/tags'
 import { ApiError } from '../api/client'
 import Modal, { Field, inputCls } from '../components/Modal'
+import { TrashIcon } from '../components/icons'
 
 const STATUS_CFG: Record<TagStatus, { labelKey: string; cls: string }> = {
   available: { labelKey: 'tags.status_available', cls: 'bg-green-100 text-green-700' },
@@ -194,10 +195,10 @@ export default function TagsPage() {
                       ) : (
                         <button
                           onClick={() => setDeleteState({ tagNumber: tag.tag_number })}
-                          className="text-xs text-slate-300 hover:text-red-400"
+                          className="text-slate-300 hover:text-red-500 p-1"
                           title={t('tags.delete')}
                         >
-                          ✕
+                          <TrashIcon size={18} />
                         </button>
                       )}
                     </td>

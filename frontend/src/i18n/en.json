@@ -58,6 +58,7 @@
     "pregnancies": "Pregnancies",
     "tests": "Tests",
     "weights": "Weights",
+    "general": "General",
     "remove": "Remove from herd",
     "add": "Add record",
     "edit": "Edit",
@@ -99,6 +100,12 @@
     "weight_kg": "Weight (kg)",
     "weighed_at": "Date",
     "notes": "Notes"
+  },
+  "general": {
+    "scanned_at": "Date",
+    "session": "Session",
+    "note": "Note",
+    "audio": "Recording"
   },
   "removal": {
     "reason": "Reason",

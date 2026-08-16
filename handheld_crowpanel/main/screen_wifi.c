@@ -5,6 +5,7 @@
 #include "i18n.h"
 #include "strings_en.h"
 #include "wifi_manager.h"
+#include "ui_icons.h"
 #include "lvgl.h"
 #include <string.h>
 #include <stdio.h>
@@ -15,9 +16,7 @@
 
 static lv_obj_t *s_screen = NULL;
 static lv_obj_t *s_header = NULL;
-static lv_obj_t *s_lbl_back = NULL;
 static lv_obj_t *s_lbl_title = NULL;
-static lv_obj_t *s_lbl_rescan = NULL;
 static lv_obj_t *s_lbl_status = NULL;
 static lv_obj_t *s_lbl_net = NULL;
 static lv_obj_t *s_dd_network = NULL;
@@ -213,10 +212,7 @@ void screen_wifi_create(void) {
     lv_obj_set_style_pad_all(btn_back, 0, LV_PART_MAIN);
     lv_obj_set_ext_click_area(btn_back, 6);
     lv_obj_add_event_cb(btn_back, on_back, LV_EVENT_CLICKED, NULL);
-    s_lbl_back = lv_label_create(btn_back);
-    lv_label_set_text(s_lbl_back, LV_SYMBOL_LEFT);
-    lv_obj_set_style_text_font(s_lbl_back, &lv_font_app_30, LV_PART_MAIN);
-    lv_obj_center(s_lbl_back);
+    ui_icon_create(btn_back, UI_SYMBOL_BACK, lv_color_white(), &lv_font_app_30);
 
     s_lbl_title = lv_label_create(s_header);
     lv_label_set_text(s_lbl_title, i18n_t(STR_SETTINGS_WIFI));
@@ -232,10 +228,7 @@ void screen_wifi_create(void) {
     lv_obj_set_style_pad_all(btn_rescan, 0, LV_PART_MAIN);
     lv_obj_set_ext_click_area(btn_rescan, 6);
     lv_obj_add_event_cb(btn_rescan, on_rescan, LV_EVENT_CLICKED, NULL);
-    s_lbl_rescan = lv_label_create(btn_rescan);
-    lv_label_set_text(s_lbl_rescan, LV_SYMBOL_REFRESH);
-    lv_obj_set_style_text_font(s_lbl_rescan, &lv_font_app_30, LV_PART_MAIN);
-    lv_obj_center(s_lbl_rescan);
+    ui_icon_create(btn_rescan, UI_SYMBOL_REFRESH, lv_color_white(), &lv_font_app_30);
 
     // ── Status line ───────────────────────────────────────────────────────────
     s_lbl_status = lv_label_create(s_screen);

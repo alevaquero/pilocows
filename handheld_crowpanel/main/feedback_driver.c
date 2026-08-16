@@ -24,33 +24,15 @@ static wav_clip_t s_clip_duplicate;
 static bool s_audio_ready = false;
 static uint8_t s_speaker_volume = 80; // overwritten from NVS via feedback_set_speaker_volume()
 
-#define BUZZER_GPIO    47
 #define VIBRATOR_GPIO  30
-#define BUZZER_LEDC_CHANNEL    LEDC_CHANNEL_0
 #define VIBRATOR_LEDC_CHANNEL  LEDC_CHANNEL_1
 #define LEDC_SPEED_MODE        LEDC_LOW_SPEED_MODE
 #define LEDC_TIMER_RESOLUTION  LEDC_TIMER_10_BIT
 #define LEDC_FREQUENCY_BASE    5000
 
-static TaskHandle_t buzzer_timer_task = NULL;
 static TaskHandle_t vibrator_timer_task = NULL;
-static TaskHandle_t buzzer_pattern_task = NULL;
 static TaskHandle_t vibrator_pattern_task = NULL;
-static bool s_buzzer_enabled = true;
 static bool s_vibrator_enabled = true;
-
-// Tone frequencies — within the buzzer's 2-5 kHz optimal range
-#define FREQ_SUCCESS   3000u  // warm, low-ish beep for confirmed scan
-#define FREQ_DUPLICATE 4500u  // higher, more alert-like for duplicate
-
-static void buzzer_timer_task_func(void *arg) {
-    uint32_t duration = (uintptr_t)arg;
-    vTaskDelay(pdMS_TO_TICKS(duration));
-    ledc_set_duty(LEDC_SPEED_MODE, BUZZER_LEDC_CHANNEL, 0);
-    ledc_update_duty(LEDC_SPEED_MODE, BUZZER_LEDC_CHANNEL);
-    buzzer_timer_task = NULL;
-    vTaskDelete(NULL);
-}
 
 static void vibrator_timer_task_func(void *arg) {
     uint32_t duration = (uintptr_t)arg;
@@ -62,7 +44,7 @@ static void vibrator_timer_task_func(void *arg) {
 }
 
 esp_err_t feedback_init(void) {
-    ESP_LOGI(TAG, "Initializing feedback drivers (buzzer GPIO 47, vibrator GPIO 30)");
+    ESP_LOGI(TAG, "Initializing feedback drivers (vibrator GPIO 30)");
 
     // Configure LEDC timer
     ledc_timer_config_t ledc_timer = {
@@ -76,23 +58,6 @@ esp_err_t feedback_init(void) {
     esp_err_t err = ledc_timer_config(&ledc_timer);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to configure LEDC timer: %s", esp_err_to_name(err));
-        return err;
-    }
-
-    // Configure buzzer LEDC channel
-    ledc_channel_config_t buzzer_channel = {
-        .channel = BUZZER_LEDC_CHANNEL,
-        .duty = 0,
-        .gpio_num = BUZZER_GPIO,
-        .speed_mode = LEDC_SPEED_MODE,
-        .hpoint = 0,
-        .timer_sel = LEDC_TIMER_0,
-        .intr_type = LEDC_INTR_DISABLE,
-    };
-
-    err = ledc_channel_config(&buzzer_channel);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to configure buzzer channel: %s", esp_err_to_name(err));
         return err;
     }
 
@@ -114,11 +79,12 @@ esp_err_t feedback_init(void) {
     }
 
     // Speaker (scan sound effects) — non-fatal if it fails to init; the
-    // named patterns below fall back to the PWM buzzer in that case.
+    // named patterns below just stay silent in that case (no PWM buzzer
+    // fallback on this board — see sound_new_tag()/sound_duplicate()).
     set_audio_ctrl(false);
     err = audio_init();
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Speaker init failed, falling back to PWM buzzer for scan sounds: %s",
+        ESP_LOGW(TAG, "Speaker init failed, scan sounds will be silent: %s",
                  esp_err_to_name(err));
     } else {
         s_clip_new_tag.pcm = sounds_new_tag_wav_start + 44; // skip the 44-byte WAV header
@@ -169,55 +135,13 @@ static void play_wav_task(void *arg) {
 }
 
 esp_err_t feedback_deinit(void) {
-    if (buzzer_timer_task) {
-        vTaskDelete(buzzer_timer_task);
-        buzzer_timer_task = NULL;
-    }
     if (vibrator_timer_task) {
         vTaskDelete(vibrator_timer_task);
         vibrator_timer_task = NULL;
     }
-    ledc_set_duty(LEDC_SPEED_MODE, BUZZER_LEDC_CHANNEL, 0);
     ledc_set_duty(LEDC_SPEED_MODE, VIBRATOR_LEDC_CHANNEL, 0);
-    ledc_update_duty(LEDC_SPEED_MODE, BUZZER_LEDC_CHANNEL);
     ledc_update_duty(LEDC_SPEED_MODE, VIBRATOR_LEDC_CHANNEL);
     ESP_LOGI(TAG, "Feedback drivers deinitialized");
-    return ESP_OK;
-}
-
-esp_err_t buzzer_beep(uint32_t frequency_hz, uint32_t duration_ms) {
-    if (frequency_hz == 0 || frequency_hz > 20000) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    esp_err_t err = buzzer_set(frequency_hz);
-    if (err != ESP_OK) return err;
-
-    if (buzzer_timer_task) {
-        vTaskDelete(buzzer_timer_task);
-    }
-
-    xTaskCreate(buzzer_timer_task_func, "buzzer_timer", 1024, (void *)(uintptr_t)duration_ms, 1, &buzzer_timer_task);
-
-    return ESP_OK;
-}
-
-esp_err_t buzzer_set(uint32_t frequency_hz) {
-    if (frequency_hz == 0) {
-        ledc_set_duty(LEDC_SPEED_MODE, BUZZER_LEDC_CHANNEL, 0);
-        ledc_update_duty(LEDC_SPEED_MODE, BUZZER_LEDC_CHANNEL);
-        return ESP_OK;
-    }
-
-    if (frequency_hz > 20000) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    ledc_set_freq(LEDC_SPEED_MODE, LEDC_TIMER_0, frequency_hz);
-    uint32_t duty = (1 << LEDC_TIMER_RESOLUTION) / 2;
-    ledc_set_duty(LEDC_SPEED_MODE, BUZZER_LEDC_CHANNEL, duty);
-    ledc_update_duty(LEDC_SPEED_MODE, BUZZER_LEDC_CHANNEL);
-
     return ESP_OK;
 }
 
@@ -252,10 +176,6 @@ esp_err_t vibrator_set(uint32_t intensity_percent) {
     return ESP_OK;
 }
 
-void feedback_set_buzzer_enabled(bool enabled) {
-    s_buzzer_enabled = enabled;
-}
-
 void feedback_set_vibrator_enabled(bool enabled) {
     s_vibrator_enabled = enabled;
 }
@@ -264,20 +184,7 @@ void feedback_set_speaker_volume(uint8_t percent) {
     s_speaker_volume = percent > 100 ? 100 : percent;
 }
 
-// ---- Named patterns, mirroring the original handheld's buzzer/vibrator feel ----
-
-static void buzzer_duplicate_task(void *arg) {
-    (void)arg;
-    buzzer_set(FREQ_DUPLICATE);
-    vTaskDelay(pdMS_TO_TICKS(120));
-    buzzer_set(0);
-    vTaskDelay(pdMS_TO_TICKS(120));
-    buzzer_set(FREQ_DUPLICATE);
-    vTaskDelay(pdMS_TO_TICKS(120));
-    buzzer_set(0);
-    buzzer_pattern_task = NULL;
-    vTaskDelete(NULL);
-}
+// ---- Named patterns ----
 
 static void vibrator_duplicate_task(void *arg) {
     (void)arg;
@@ -292,39 +199,38 @@ static void vibrator_duplicate_task(void *arg) {
     vTaskDelete(NULL);
 }
 
-void buzzer_success(void) {
-    if (!s_buzzer_enabled) return;
-    if (s_audio_ready) {
-        // Bright ascending two-note confirm chime, played through the speaker.
-        xTaskCreate(play_wav_task, "snd_new_tag", 3072, &s_clip_new_tag, 3, NULL);
-    } else {
-        // Fallback: one warm, long PWM beep.
-        buzzer_beep(FREQ_SUCCESS, 400);
-    }
+void sound_new_tag(void) {
+    if (!s_audio_ready) return;
+    // Bright ascending two-note confirm chime, played through the speaker.
+    xTaskCreate(play_wav_task, "snd_new_tag", 3072, &s_clip_new_tag, 3, NULL);
 }
 
-void buzzer_duplicate(void) {
-    if (!s_buzzer_enabled) return;
-    if (s_audio_ready) {
-        // Neutral flat double-blip, played through the speaker.
-        xTaskCreate(play_wav_task, "snd_dup", 3072, &s_clip_duplicate, 3, NULL);
-    } else {
-        // Fallback: two short PWM beeps.
-        if (buzzer_pattern_task) vTaskDelete(buzzer_pattern_task);
-        xTaskCreate(buzzer_duplicate_task, "buzzer_dup", 1024, NULL, 3, &buzzer_pattern_task);
-    }
+void sound_duplicate(void) {
+    if (!s_audio_ready) return;
+    // Neutral flat double-blip, played through the speaker.
+    xTaskCreate(play_wav_task, "snd_dup", 3072, &s_clip_duplicate, 3, NULL);
 }
 
-void vibrator_success(void) {
-    if (!s_vibrator_enabled) return;
+// Runs the pattern unconditionally — shared by the named (enabled-gated)
+// functions below and by the Settings screen's always-on test buttons.
+static void run_new_tag_pattern(void) {
     // One long pulse — matches a confirmed new scan.
     vibrator_pulse(100, 400);
 }
 
-void vibrator_duplicate(void) {
-    if (!s_vibrator_enabled) return;
+static void run_duplicate_pattern(void) {
     if (vibrator_pattern_task) vTaskDelete(vibrator_pattern_task);
     xTaskCreate(vibrator_duplicate_task, "vibrator_dup", 1024, NULL, 3, &vibrator_pattern_task);
+}
+
+void vibrator_success(void) {
+    if (!s_vibrator_enabled) return;
+    run_new_tag_pattern();
+}
+
+void vibrator_duplicate(void) {
+    if (!s_vibrator_enabled) return;
+    run_duplicate_pattern();
 }
 
 void audio_test_new_tag(void) {
@@ -335,4 +241,12 @@ void audio_test_new_tag(void) {
 void audio_test_duplicate(void) {
     if (!s_audio_ready) return;
     xTaskCreate(play_wav_task, "snd_test_dup", 3072, &s_clip_duplicate, 3, NULL);
+}
+
+void vibrator_test_new_tag(void) {
+    run_new_tag_pattern();
+}
+
+void vibrator_test_duplicate(void) {
+    run_duplicate_pattern();
 }

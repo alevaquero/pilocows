@@ -7,11 +7,15 @@ import {
   PREGNANCY_RESULTS, TB_RESULTS, REMOVAL_REASONS, COMMON_VACCINES,
   type Vaccination, type Pregnancy, type Test, type Weight, type Removal,
 } from '../api/health'
+import { BASE } from '../api/client'
 import Modal, { Field, inputCls } from '../components/Modal'
+import AudioPlayButton from '../components/AudioPlayButton'
+import { PencilIcon, TrashIcon } from '../components/icons'
+import { formatLocalDateTime } from '../utils/date'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'vaccinations' | 'pregnancies' | 'tests' | 'weights'
+type Tab = 'vaccinations' | 'pregnancies' | 'tests' | 'weights' | 'general'
 
 type ModalState =
   | null
@@ -26,7 +30,9 @@ type ModalState =
   | { kind: 'delete'; recordType: Tab; id: number }
   | { kind: 'delete_animal' }
 
-const TAB_TO_KIND: Record<Tab, 'vaccination' | 'pregnancy' | 'test' | 'weight'> = {
+// 'general' has no entry — those rows are read-only, sync-only, so there's
+// no "add" form for them (see the Add-button guard where this is used).
+const TAB_TO_KIND: Partial<Record<Tab, 'vaccination' | 'pregnancy' | 'test' | 'weight'>> = {
   vaccinations: 'vaccination',
   pregnancies: 'pregnancy',
   tests: 'test',
@@ -57,16 +63,37 @@ function Td({ children }: { children: React.ReactNode }) {
 function Empty({ t }: { t: (k: string) => string }) {
   return <p className="px-4 py-6 text-sm text-slate-400">{t('detail.no_records')}</p>
 }
-function RowActions({ onEdit, onDelete }: { onEdit: () => void; onDelete: () => void }) {
+function RowActions({ onEdit, onDelete, audioSrc }: { onEdit: () => void; onDelete: () => void; audioSrc?: string }) {
   const { t } = useTranslation()
   return (
     <td className="px-4 py-3 text-right whitespace-nowrap">
-      <button onClick={onEdit} className="text-xs text-slate-500 hover:text-slate-800 mr-3">{t('detail.edit')}</button>
-      <button onClick={onDelete} className="text-xs text-red-500 hover:text-red-700">{t('detail.delete')}</button>
+      <span className="inline-flex items-center gap-1">
+        {/* AudioPlayButton's icon fills its box edge-to-edge (no padding),
+            unlike the p-1 pencil/trash buttons below — without this extra
+            margin the recording icon reads visually closer to Edit than
+            Edit reads to Delete, despite an equal flex gap between all three. */}
+        {audioSrc && <span className="mr-1"><AudioPlayButton src={audioSrc} onRowClick /></span>}
+        <button onClick={onEdit} className="text-slate-400 hover:text-slate-700 p-1" title={t('detail.edit')}>
+          <PencilIcon size={18} />
+        </button>
+        <button onClick={onDelete} className="text-slate-300 hover:text-red-500 p-1" title={t('detail.delete')}>
+          <TrashIcon size={18} />
+        </button>
+      </span>
     </td>
   )
 }
 function today() { return new Date().toISOString().slice(0, 10) }
+
+// Shared by the four health-record tables' RowActions — session_id/eid are
+// only ever set on rows fanned out from a handheld sync (see backend's
+// fan_out_session_record); has_audio is computed there via a JOIN back onto
+// session_records, which is what actually holds the audio blob.
+function recordAudioSrc(row: { has_audio: boolean; session_id: number | null; eid: string | null }): string | undefined {
+  return row.has_audio && row.session_id != null && row.eid
+    ? `${BASE}/sessions/${row.session_id}/records/${encodeURIComponent(row.eid)}/audio`
+    : undefined
+}
 
 // ── Edit Animal modal ─────────────────────────────────────────────────────────
 
@@ -501,7 +528,7 @@ export default function AnimalDetailPage() {
   if (loading) return <div className="p-8 text-sm text-slate-500">{t('common.loading')}</div>
   if (!profile) return <div className="p-8 text-sm text-slate-500">{t('common.error')}</div>
 
-  const { vaccinations, pregnancies, tests, weights, removal } = profile
+  const { vaccinations, pregnancies, tests, weights, removal, general_scans } = profile
 
   // ── Profile state updaters ─────────────────────────────────────────────────
 
@@ -609,15 +636,18 @@ export default function AnimalDetailPage() {
         <TabButton label={`${t('detail.pregnancies')} (${pregnancies.length})`} active={tab === 'pregnancies'} onClick={() => setTab('pregnancies')} />
         <TabButton label={`${t('detail.tests')} (${tests.length})`} active={tab === 'tests'} onClick={() => setTab('tests')} />
         <TabButton label={`${t('detail.weights')} (${weights.length})`} active={tab === 'weights'} onClick={() => setTab('weights')} />
+        <TabButton label={`${t('detail.general')} (${general_scans.length})`} active={tab === 'general'} onClick={() => setTab('general')} />
       </div>
 
       {/* Tab content */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-100 flex justify-end">
-          <button onClick={() => setModal({ kind: TAB_TO_KIND[tab] })} className="px-3 py-1.5 text-xs rounded-lg bg-slate-800 text-white hover:bg-slate-700">
-            {t('detail.add')}
-          </button>
-        </div>
+        {tab !== 'general' && (
+          <div className="px-4 py-3 border-b border-slate-100 flex justify-end">
+            <button onClick={() => setModal({ kind: TAB_TO_KIND[tab]! })} className="px-3 py-1.5 text-xs rounded-lg bg-slate-800 text-white hover:bg-slate-700">
+              {t('detail.add')}
+            </button>
+          </div>
+        )}
 
         {/* Vaccinations */}
         {tab === 'vaccinations' && (
@@ -631,11 +661,12 @@ export default function AnimalDetailPage() {
               <tbody>{vaccinations.map(v => (
                 <tr key={v.id} className="border-b border-slate-50 last:border-0">
                   <td className="px-4 py-3 font-medium text-slate-800 select-text cursor-text">{v.vaccine}</td>
-                  <Td>{v.dose || '—'}</Td><Td>{v.administered_at}</Td>
+                  <Td>{v.dose || '—'}</Td><Td>{formatLocalDateTime(v.administered_at)}</Td>
                   <Td>{v.next_due_at ?? '—'}</Td><Td>{v.notes || '—'}</Td>
                   <RowActions
                     onEdit={() => setModal({ kind: 'vaccination', initial: v })}
                     onDelete={() => setModal({ kind: 'delete', recordType: 'vaccinations', id: v.id })}
+                    audioSrc={recordAudioSrc(v)}
                   />
                 </tr>
               ))}</tbody>
@@ -654,10 +685,11 @@ export default function AnimalDetailPage() {
               <tbody>{pregnancies.map(p => (
                 <tr key={p.id} className="border-b border-slate-50 last:border-0">
                   <td className="px-4 py-3 font-medium text-slate-800 select-text cursor-text">{t(`pregnancy.${p.result}`)}</td>
-                  <Td>{p.checked_at}</Td><Td>{p.due_date ?? '—'}</Td><Td>{p.notes || '—'}</Td>
+                  <Td>{formatLocalDateTime(p.checked_at)}</Td><Td>{p.due_date ?? '—'}</Td><Td>{p.notes || '—'}</Td>
                   <RowActions
                     onEdit={() => setModal({ kind: 'pregnancy', initial: p })}
                     onDelete={() => setModal({ kind: 'delete', recordType: 'pregnancies', id: p.id })}
+                    audioSrc={recordAudioSrc(p)}
                   />
                 </tr>
               ))}</tbody>
@@ -677,10 +709,11 @@ export default function AnimalDetailPage() {
                 <tr key={tb.id} className="border-b border-slate-50 last:border-0">
                   <td className="px-4 py-3 font-medium text-slate-800 select-text cursor-text">{tb.test_name || '—'}</td>
                   <Td>{t(`test.${tb.result}`)}</Td>
-                  <Td>{tb.tested_at}</Td><Td>{tb.notes || '—'}</Td>
+                  <Td>{formatLocalDateTime(tb.tested_at)}</Td><Td>{tb.notes || '—'}</Td>
                   <RowActions
                     onEdit={() => setModal({ kind: 'test', initial: tb })}
                     onDelete={() => setModal({ kind: 'delete', recordType: 'tests', id: tb.id })}
+                    audioSrc={recordAudioSrc(tb)}
                   />
                 </tr>
               ))}</tbody>
@@ -699,11 +732,38 @@ export default function AnimalDetailPage() {
               <tbody>{weights.map(w => (
                 <tr key={w.id} className="border-b border-slate-50 last:border-0">
                   <td className="px-4 py-3 font-medium text-slate-800 select-text cursor-text">{w.weight_kg} kg</td>
-                  <Td>{w.weighed_at}</Td><Td>{w.notes || '—'}</Td>
+                  <Td>{formatLocalDateTime(w.weighed_at)}</Td><Td>{w.notes || '—'}</Td>
                   <RowActions
                     onEdit={() => setModal({ kind: 'weight', initial: w })}
                     onDelete={() => setModal({ kind: 'delete', recordType: 'weights', id: w.id })}
+                    audioSrc={recordAudioSrc(w)}
                   />
+                </tr>
+              ))}</tbody>
+            </table>
+          )
+        )}
+
+        {/* General scans — read-only, no RowActions: these only ever come
+            from a handheld sync, editing/deleting here would just be undone
+            by the next sync. */}
+        {tab === 'general' && (
+          general_scans.length === 0 ? <Empty t={t} /> : (
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-slate-100 bg-slate-50">
+                <Th>{t('general.scanned_at')}</Th><Th>{t('general.session')}</Th>
+                <Th>{t('general.note')}</Th><Th>{t('general.audio')}</Th>
+              </tr></thead>
+              <tbody>{general_scans.map(g => (
+                <tr key={`${g.session_id}-${g.eid}-${g.scanned_at}`} className="border-b border-slate-50 last:border-0">
+                  <td className="px-4 py-3 font-medium text-slate-800 select-text cursor-text">{formatLocalDateTime(g.scanned_at)}</td>
+                  <Td>{g.session_name || '—'}</Td>
+                  <Td>{g.note || '—'}</Td>
+                  <td className="px-4 py-3">
+                    {g.has_audio && (
+                      <AudioPlayButton src={`${BASE}/sessions/${g.session_id}/records/${encodeURIComponent(g.eid)}/audio`} />
+                    )}
+                  </td>
                 </tr>
               ))}</tbody>
             </table>

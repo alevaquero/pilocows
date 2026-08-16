@@ -18,6 +18,7 @@
 #include "session_storage.h"
 #include "ui_manager.h"
 #include "screen_scan.h"
+#include "screen_splash.h"
 #include "button_driver.h"
 #include "feedback_driver.h"
 #include "rfid_driver.h"
@@ -101,6 +102,11 @@ static QueueHandle_t s_scan_queue = NULL;
 // EID of the tag currently displayed on the scan screen (pending save).
 static char s_prev_eid[SESSION_EID_MAX + 1] = {0};
 
+// True once the scan queue has gone quiet (a read timed out) since the last
+// processed scan — see main_task's debounce comment below. Starts true so
+// the very first scan after boot is never suppressed.
+static bool s_scan_gap_seen = true;
+
 // ---------------------------------------------------------------------------
 // RFID tag callback — called from the RFID task
 // ---------------------------------------------------------------------------
@@ -159,9 +165,34 @@ static void main_task(void *arg) {
     RfidScan scan;
 
     while (true) {
-        if (xQueueReceive(s_scan_queue, &scan, pdMS_TO_TICKS(100)) != pdTRUE) continue;
+        if (xQueueReceive(s_scan_queue, &scan, pdMS_TO_TICKS(100)) != pdTRUE) {
+            // Nothing arrived in the last 100ms — the reader went quiet,
+            // meaning the tag physically left its field (it re-transmits
+            // continuously while present, with no hardware debounce — see
+            // rfid_driver.c — and stops entirely once removed). This gap is
+            // exactly what distinguishes "still lingering" from "the user
+            // pulled it away and is about to re-present it."
+            s_scan_gap_seen = true;
+            continue;
+        }
 
         const char *eid = scan.eid;
+
+        // Without this guard, a tag lingering in the field would re-run the
+        // entire display / duplicate-check / flash / sound / vibration
+        // pipeline below many times per second for as long as it sits
+        // there, even while the user is on a completely different screen
+        // (e.g. recording a voice note) — this is what caused a crash
+        // (LVGL timer/animation churn from screen_scan_flash() being
+        // retriggered nonstop). Only suppress back-to-back repeats of the
+        // same EID with no gap between them; the moment there's been any
+        // gap since the last processed scan, treat it as fresh even if
+        // it's the same tag — that's the "missed the beep, scan it again"
+        // case, which always involves at least a brief gap since the
+        // reader stops transmitting the instant the tag leaves range.
+        if (!s_scan_gap_seen && s_prev_eid[0] != '\0' && strcmp(eid, s_prev_eid) == 0) continue;
+        s_scan_gap_seen = false;
+
         bool has_session = false;
         {
             session_meta_t m;
@@ -196,11 +227,11 @@ static void main_task(void *arg) {
         // 4. Audio / haptic feedback
         if (duplicate) {
             ESP_LOGI(TAG, "Duplicate: %s", eid);
-            buzzer_duplicate();
+            sound_duplicate();
             vibrator_duplicate();
         } else {
             ESP_LOGI(TAG, "New tag: %s", eid);
-            buzzer_success();
+            sound_new_tag();
             vibrator_success();
         }
 
@@ -295,7 +326,7 @@ void app_main(void) {
     // Language preference (reads from NVS)
     i18n_init();
 
-    // Software clock — CrowPanel has no DS3231; best-effort restore from NVS.
+    // Restore time — hardware RTC (DS3231) if one's wired up, else best-effort NVS restore.
     if (!soft_rtc_init()) {
         ESP_LOGW(TAG, "No saved time - system clock starts at epoch");
     }
@@ -305,6 +336,19 @@ void app_main(void) {
     err = display_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Display initialization failed: %s", esp_err_to_name(err));
+    } else {
+        // Boot splash — shown as early as possible and kept up through the
+        // rest of this function's init work (session storage, mic,
+        // feedback, buttons, ui_manager's screen creation, WiFi, RFID,
+        // BLE), so the user sees something other than a stalled backlight
+        // during that time. Backlight is turned on right away here (moved
+        // up from the end of app_main()) since otherwise the splash itself
+        // wouldn't be visible.
+        ESP_LOGI(TAG, "Showing boot splash...");
+        lvgl_port_lock(0);
+        screen_splash_show();
+        lvgl_port_unlock();
+        set_lcd_blight(100);
     }
 
     // Initialize session storage (mounts SPIFFS, restores active session)
@@ -330,9 +374,9 @@ void app_main(void) {
     }
     AppSettings settings;
     if (nvs_load_settings(&settings) == ESP_OK) {
-        feedback_set_buzzer_enabled(settings.buzzer_enabled);
         feedback_set_vibrator_enabled(settings.vibrator_enabled);
         feedback_set_speaker_volume(settings.speaker_volume);
+        if (mic_is_ready()) mic_set_gain(settings.mic_gain);
     }
 
     // Initialize button driver
@@ -350,10 +394,6 @@ void app_main(void) {
     wifi_set_on_connected(ota_server_start);
     wifi_manager_init();
 
-    // Set display brightness to maximum
-    set_lcd_blight(100);
-    ESP_LOGI(TAG, "Display brightness set to 100%%");
-
     // Scan event queue
     s_scan_queue = xQueueCreate(16, sizeof(RfidScan));
 
@@ -368,13 +408,27 @@ void app_main(void) {
     ble_gatt_server_init(on_ble_command);
     ble_gatt_server_update_status(session_get_tag_count(), FIRMWARE_VERSION);
 
+    // Boot complete — swap away from the splash into the real home screen.
+    lvgl_port_lock(0);
+    ui_manager_show(SCREEN_SESSION_MENU);
+    lvgl_port_unlock();
+
     ESP_LOGI(TAG, "========== System Ready ==========");
     ESP_LOGI(TAG, "%" PRIu32 " animals in active session", session_get_tag_count());
     ESP_LOGI(TAG, "Heap: %lu internal free, %lu total free",
              (unsigned long)esp_get_free_internal_heap_size(),
              (unsigned long)esp_get_free_heap_size());
 
-    BaseType_t task_ok = xTaskCreate(main_task, "main_task", 4096, NULL, 5, NULL);
+    // 4096 was marginal: every scan runs its full pipeline (session lookups,
+    // several nested screen_scan_* calls, ESP_LOGI string formatting, and —
+    // now — LVGL animation setup for the scan flash) synchronously on this
+    // stack, under lvgl_port_lock(). Bumped defensively after an
+    // intermittent watchdog crash (IDLE0 starved, "Stack dump detected" —
+    // ESP-IDF's panic handler couldn't cleanly unwind the captured
+    // context) that a scan-heavy repro triggered; see audio_codec_util.c's
+    // header comment for the same symptom class from undersized stacks
+    // elsewhere in this project.
+    BaseType_t task_ok = xTaskCreate(main_task, "main_task", 8192, NULL, 5, NULL);
     if (task_ok != pdPASS) {
         ESP_LOGE(TAG, "FATAL: failed to create main_task (heap exhausted?)");
     }

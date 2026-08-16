@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -14,6 +14,7 @@ import { BASE } from '../api/client'
 import { animalsApi, BREEDS, CATEGORIES } from '../api/animals'
 import { tagsApi, type Tag } from '../api/tags'
 import Modal, { Field, inputCls } from '../components/Modal'
+import AudioPlayButton from '../components/AudioPlayButton'
 
 // ── Register Tag modal (used when clicking an EID not in the tag inventory) ───
 
@@ -269,42 +270,6 @@ function DeleteConfirmModal({ onClose, onConfirm }: { onClose: () => void; onCon
         </div>
       </div>
     </div>
-  )
-}
-
-// ── Voice note play button (native <audio>, fetched lazily via src) ───────────
-
-function AudioPlayButton({ src, onRowClick }: { src: string; onRowClick?: boolean }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const [playing, setPlaying] = useState(false)
-
-  const toggle = (e: React.MouseEvent) => {
-    if (onRowClick) e.stopPropagation() // don't trigger the row's onClick navigation
-    const audio = audioRef.current
-    if (!audio) return
-    if (playing) audio.pause()
-    else audio.play().catch(() => {})
-  }
-
-  return (
-    <>
-      <button
-        onClick={toggle}
-        className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 shrink-0"
-        title={playing ? 'Pause' : 'Play'}
-      >
-        {playing ? '⏸' : '▶'}
-      </button>
-      <audio
-        ref={audioRef}
-        src={src}
-        preload="none"
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onEnded={() => setPlaying(false)}
-        className="hidden"
-      />
-    </>
   )
 }
 

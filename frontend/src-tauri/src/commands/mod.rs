@@ -84,15 +84,19 @@ pub async fn ble_connect(state: State<'_, AppState>, device_id: String) -> Resul
 // ---------------------------------------------------------------------------
 
 /// Return the list of sessions stored on the handheld.
+///
+/// No outer duration cap here on purpose: read_session_list already times
+/// out every individual write/read internally (10s each), so a session list
+/// with many pages that's still making progress — just slowly, over a weak
+/// link — isn't killed by an arbitrary total-time budget. Only a step that
+/// itself actually stalls fails, with a specific error naming which one.
 #[tauri::command]
 pub async fn ble_read_sessions(state: State<'_, AppState>) -> Result<Vec<HeldSession>, String> {
     let conn_guard = state.conn.lock().await;
     let conn = conn_guard
         .as_ref()
         .ok_or("Not connected — call ble_connect first")?;
-    timeout(Duration::from_secs(30), ble::read_session_list(conn))
-        .await
-        .map_err(|_| "Session list read timed out (30s) — device may be out of range".to_string())?
+    ble::read_session_list(conn).await
 }
 
 // ---------------------------------------------------------------------------
@@ -100,6 +104,10 @@ pub async fn ble_read_sessions(state: State<'_, AppState>) -> Result<Vec<HeldSes
 // ---------------------------------------------------------------------------
 
 /// Read all scan records for a given session from the handheld.
+///
+/// No outer duration cap — see ble_read_sessions above; read_session_data
+/// now times out every individual write/read internally (10s each), so this
+/// no longer needs (or should have) a total-time ceiling on top.
 #[tauri::command]
 pub async fn ble_read_session_data(
     state: State<'_, AppState>,
@@ -109,9 +117,7 @@ pub async fn ble_read_session_data(
     let conn = conn_guard
         .as_ref()
         .ok_or("Not connected — call ble_connect first")?;
-    timeout(Duration::from_secs(60), ble::read_session_data(conn, session_id))
-        .await
-        .map_err(|_| "Session data read timed out (60s) — device may be out of range".to_string())?
+    ble::read_session_data(conn, session_id).await
 }
 
 // ---------------------------------------------------------------------------
@@ -159,27 +165,21 @@ pub async fn ble_read_session_note_audio(
     let conn = conn_guard
         .as_ref()
         .ok_or("Not connected — call ble_connect first")?;
-    // Audio pages are ~480 bytes each and, over this board's ESP-Hosted
-    // BLE bridge, per-page latency has been observed climbing steadily
-    // over the course of a long transfer (likely WiFi/BLE coexistence
-    // contention on the C6 co-processor) — a full ~10s clip (320KB) has
-    // taken 300s+ in testing. read_selected_audio has its own per-page
-    // timeout to fail fast on a truly stuck link, so this outer bound just
-    // needs to cover a slow-but-still-progressing worst-case transfer.
-    const AUDIO_TRANSFER_TIMEOUT_SECS: u64 = 600;
-    let bytes = timeout(
-        Duration::from_secs(AUDIO_TRANSFER_TIMEOUT_SECS),
-        ble::read_note_audio(conn, session_id, |loaded, total| {
-            let _ = app.emit(
-                "audio-progress",
-                AudioProgressPayload { session_id, eid: None, loaded, total },
-            );
-        }),
-    )
-    .await
-    .map_err(|_| {
-        format!("Note audio read timed out ({AUDIO_TRANSFER_TIMEOUT_SECS}s) — device may be out of range")
-    })??;
+    // No outer duration cap — see ble_read_sessions above. Audio pages are
+    // ~480 bytes each and per-page latency has been observed climbing over
+    // the course of a long transfer (likely WiFi/BLE coexistence contention
+    // on the C6 co-processor); read_selected_audio's own per-page timeout
+    // (15s) plus its retry cap and end-to-end integrity check are what
+    // actually guard against a stuck link, so a slow-but-still-progressing
+    // transfer — even one that legitimately takes several minutes — isn't
+    // killed by an arbitrary total-time budget on top.
+    let bytes = ble::read_note_audio(conn, session_id, |loaded, total| {
+        let _ = app.emit(
+            "audio-progress",
+            AudioProgressPayload { session_id, eid: None, loaded, total },
+        );
+    })
+    .await?;
     Ok(bytes.map(|b| BASE64.encode(b)))
 }
 
@@ -195,20 +195,14 @@ pub async fn ble_read_tag_audio(
     let conn = conn_guard
         .as_ref()
         .ok_or("Not connected — call ble_connect first")?;
-    const AUDIO_TRANSFER_TIMEOUT_SECS: u64 = 600;
-    let bytes = timeout(
-        Duration::from_secs(AUDIO_TRANSFER_TIMEOUT_SECS),
-        ble::read_tag_audio(conn, session_id, &eid, |loaded, total| {
-            let _ = app.emit(
-                "audio-progress",
-                AudioProgressPayload { session_id, eid: Some(eid.clone()), loaded, total },
-            );
-        }),
-    )
-    .await
-    .map_err(|_| {
-        format!("Tag audio read timed out ({AUDIO_TRANSFER_TIMEOUT_SECS}s) — device may be out of range")
-    })??;
+    // No outer duration cap — see ble_read_session_note_audio above.
+    let bytes = ble::read_tag_audio(conn, session_id, &eid, |loaded, total| {
+        let _ = app.emit(
+            "audio-progress",
+            AudioProgressPayload { session_id, eid: Some(eid.clone()), loaded, total },
+        );
+    })
+    .await?;
     Ok(bytes.map(|b| BASE64.encode(b)))
 }
 
@@ -245,7 +239,11 @@ pub async fn ble_delete_session(
     let conn = conn_guard
         .as_ref()
         .ok_or("Not connected — call ble_connect first")?;
-    ble::delete_session(conn, session_id).await
+    // Single-shot operation — this had no timeout at all before, meaning a
+    // stuck write could hang forever with nothing to catch it.
+    timeout(Duration::from_secs(15), ble::delete_session(conn, session_id))
+        .await
+        .map_err(|_| "Delete session timed out (15s) — device may be out of range".to_string())?
 }
 
 // ---------------------------------------------------------------------------

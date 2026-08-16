@@ -3,6 +3,8 @@
 #include "strings_en.h"
 #include "esp_spiffs.h"
 #include "bsp_sd.h"
+#include "audio_codec_util.h"
+#include "soft_rtc.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
@@ -86,8 +88,12 @@ static void remove_session_audio_dir(uint32_t session_id) {
     rmdir(dir);
 }
 
-// Standard 44-byte-header PCM WAV, 16kHz/16-bit mono (matches the mic's
-// native capture format).
+// Standard 44-byte-header G.711 A-law WAV, 8kHz/8-bit mono
+// (audio_format=WAVE_FORMAT_ALAW) — a real, standard WAV variant any
+// correct reader can parse, roughly a quarter the size of a 16-bit/16kHz
+// PCM capture. Recordings are captured at 16kHz/16-bit (the mic's native
+// format, unchanged — see bsp_mic.h) and downsampled+companded down to
+// this only at save time, via audio_codec_encode_alaw().
 typedef struct __attribute__((packed)) {
     char riff[4]; uint32_t riff_size; char wave[4];
     char fmt[4]; uint32_t fmt_size; uint16_t audio_format; uint16_t num_channels;
@@ -95,26 +101,37 @@ typedef struct __attribute__((packed)) {
     char data[4]; uint32_t data_size;
 } wav_header_t;
 
+#define WAVE_FORMAT_ALAW 6
+
 static esp_err_t write_wav_file(const char *path, const int16_t *pcm, size_t n_samples) {
+    uint8_t *alaw = NULL;
+    size_t alaw_len = 0;
+    esp_err_t enc_err = audio_codec_encode_alaw(pcm, n_samples, &alaw, &alaw_len);
+    if (enc_err != ESP_OK) {
+        ESP_LOGE(TAG, "write_wav_file(%s): A-law encode failed: %s", path, esp_err_to_name(enc_err));
+        return enc_err;
+    }
+
     FILE *f = fopen(path, "wb");
     if (!f) {
         ESP_LOGE(TAG, "write_wav_file: fopen(%s) failed (errno=%d)", path, errno);
+        free(alaw);
         return ESP_FAIL;
     }
 
-    uint32_t data_bytes = (uint32_t)(n_samples * sizeof(int16_t));
     wav_header_t hdr = {
-        .riff = {'R','I','F','F'}, .riff_size = 36 + data_bytes, .wave = {'W','A','V','E'},
-        .fmt = {'f','m','t',' '}, .fmt_size = 16, .audio_format = 1, .num_channels = 1,
-        .sample_rate = 16000, .byte_rate = 16000 * 2, .block_align = 2, .bits_per_sample = 16,
-        .data = {'d','a','t','a'}, .data_size = data_bytes,
+        .riff = {'R','I','F','F'}, .riff_size = 36 + (uint32_t)alaw_len, .wave = {'W','A','V','E'},
+        .fmt = {'f','m','t',' '}, .fmt_size = 16, .audio_format = WAVE_FORMAT_ALAW, .num_channels = 1,
+        .sample_rate = 8000, .byte_rate = 8000, .block_align = 1, .bits_per_sample = 8,
+        .data = {'d','a','t','a'}, .data_size = (uint32_t)alaw_len,
     };
     size_t hn = fwrite(&hdr, sizeof(hdr), 1, f);
-    size_t pn = fwrite(pcm, sizeof(int16_t), n_samples, f);
+    size_t pn = fwrite(alaw, 1, alaw_len, f);
     int close_err = fclose(f);
-    bool ok = (hn == 1 && pn == n_samples && close_err == 0);
-    ESP_LOGI(TAG, "write_wav_file(%s): %zu/%zu samples written, header=%zu/1, fclose=%d -> %s",
-             path, pn, n_samples, hn, close_err, ok ? "OK" : "FAILED");
+    free(alaw);
+    bool ok = (hn == 1 && pn == alaw_len && close_err == 0);
+    ESP_LOGI(TAG, "write_wav_file(%s): %zu/%zu A-law bytes written (from %zu PCM samples), header=%zu/1, fclose=%d -> %s",
+             path, pn, alaw_len, n_samples, hn, close_err, ok ? "OK" : "FAILED");
     return ok ? ESP_OK : ESP_FAIL;
 }
 
@@ -147,9 +164,8 @@ static esp_err_t meta_write(const session_meta_t *m) {
 }
 
 void session_build_default_name(session_type_t type, char *buf, size_t len) {
-    time_t now = time(NULL);
     struct tm t;
-    localtime_r(&now, &t);
+    soft_rtc_get_local_tm(&t);
 
     const char *type_str;
     switch (type) {
@@ -412,6 +428,30 @@ esp_err_t session_save_note(uint32_t session_id, const char *note) {
 
     if (err == ESP_OK && session_id == s_active_session_id && s_cache_valid) {
         strncpy(s_active_cache.note, note, sizeof(s_active_cache.note) - 1);
+    }
+
+    UNLOCK();
+    return err;
+}
+
+esp_err_t session_update_name(uint32_t session_id, const char *name) {
+    if (!name || !name[0] || session_id == 0) return ESP_ERR_INVALID_ARG;
+
+    LOCK();
+    session_meta_t m;
+    esp_err_t err = meta_read(session_id, &m);
+    if (err != ESP_OK || m.id != session_id || m.deleted) {
+        UNLOCK();
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    strncpy(m.name, name, sizeof(m.name) - 1);
+    m.name[sizeof(m.name) - 1] = '\0';
+    err = meta_write(&m);
+
+    if (err == ESP_OK && session_id == s_active_session_id && s_cache_valid) {
+        strncpy(s_active_cache.name, name, sizeof(s_active_cache.name) - 1);
+        s_active_cache.name[sizeof(s_active_cache.name) - 1] = '\0';
     }
 
     UNLOCK();

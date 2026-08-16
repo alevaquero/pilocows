@@ -58,6 +58,7 @@
     "pregnancies": "Prenez",
     "tests": "Tests",
     "weights": "Pesos",
+    "general": "General",
     "remove": "Dar de baja",
     "add": "Agregar registro",
     "edit": "Editar",
@@ -80,7 +81,7 @@
     "checked_at": "Fecha de control",
     "due_date": "Fecha probable de parto",
     "unknown": "Desconocido",
-    "not_pregnant": "No gestante",
+    "not_pregnant": "Vacía",
     "small_pregnant": "Pequeña",
     "medium_pregnant": "Mediana",
     "big_pregnant": "Grande",
@@ -99,6 +100,12 @@
     "weight_kg": "Peso (kg)",
     "weighed_at": "Fecha",
     "notes": "Notas"
+  },
+  "general": {
+    "scanned_at": "Fecha",
+    "session": "Sesión",
+    "note": "Nota",
+    "audio": "Grabación"
   },
   "removal": {
     "reason": "Motivo",

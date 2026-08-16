@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { sessionsApi, type SessionSummary, sessionTypeKey } from '../api/sessions'
+import { TrashIcon } from '../components/icons'
 
 // ── Type badge ────────────────────────────────────────────────────────────────
 
@@ -164,16 +165,13 @@ function SessionCard({
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-1 shrink-0 mt-0.5">
-            <button
-              onClick={e => { e.stopPropagation(); setConfirming(true) }}
-              className="text-slate-300 hover:text-red-400 text-sm px-1 leading-none"
-              title={t('sessions.delete_session')}
-            >
-              ✕
-            </button>
-            <span className="text-slate-300 text-lg leading-none">›</span>
-          </div>
+          <button
+            onClick={e => { e.stopPropagation(); setConfirming(true) }}
+            className="text-slate-300 hover:text-red-500 shrink-0 mt-0.5 p-1"
+            title={t('sessions.delete_session')}
+          >
+            <TrashIcon size={20} />
+          </button>
         )}
       </div>
     </div>
