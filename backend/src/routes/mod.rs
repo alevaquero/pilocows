@@ -8,7 +8,7 @@ pub mod sync;
 pub mod tags;
 
 use axum::{
-    routing::{delete, get, patch, post},
+    routing::{get, patch, post},
     Router,
 };
 use sqlx::SqlitePool;
