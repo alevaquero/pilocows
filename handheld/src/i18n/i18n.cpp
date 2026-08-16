@@ -97,7 +97,7 @@ static const struct { const char *en; const char *es; } s_table[] = {
     // Pregnancy
     { "Pregnancy",                  "Prenez" },
     { "Unknown",                    "Desconocido" },
-    { "Not pregnant",               "No gestante" },
+    { "Not pregnant",               "Vacía" },
     { "Small",                      "Pequeña" },
     { "Medium",                     "Mediana" },
     { "Big",                        "Grande" },

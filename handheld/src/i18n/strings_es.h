@@ -106,7 +106,7 @@
 // Pregnancy
 #define STR_PREG_RESULT             "Prenez"
 #define STR_PREG_UNKNOWN            "Desconocido"
-#define STR_PREG_NO                 "No gestante"
+#define STR_PREG_NO                 "Vacía"
 #define STR_PREG_SMALL              "Pequeña"
 #define STR_PREG_MEDIUM             "Mediana"
 #define STR_PREG_BIG                "Grande"
