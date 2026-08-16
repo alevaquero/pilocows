@@ -1,6 +1,11 @@
 # Pilocows Handheld — CrowPanel Advanced 5" ESP32-P4 Build Guide
 
-**Status**: Phase 1 MVP (Display + Touch drivers, demo UI)
+> **⚠️ Superseded.** This doc describes the Phase 1 MVP (PlatformIO, demo tap-counter UI).
+> The project has since moved to plain ESP-IDF (`idf.py`, not PlatformIO) and is now in
+> Phase 2. For current build/flash instructions, see the **Handheld** section of the
+> root [`README.md`](README.md). Kept here for historical reference only.
+
+**Status**: Phase 1 MVP (Display + Touch drivers, demo UI) — historical
 
 ---
 

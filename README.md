@@ -25,8 +25,8 @@ Animal traceability system for Pilo's farm. Tracks cattle via ISO 11784/85 RFID 
 ```
 ┌─────────────────┐        BLE (GATT)         ┌──────────────────────────┐
 │   Handheld      │ ◄───────────────────────► │   Frontend (Tauri+React) │
-│   ESP32-S3      │    scan list + events     │   macOS / Windows        │
-│                 │                           │                          │
+│   ESP32-P4      │    scan list + events     │   macOS / Windows        │
+│  (CrowPanel)    │                           │                          │
 │  - RFID scan    │                           │  - BLE central           │
 │  - Local store  │                           │  - Animal records UI     │
 │  - LVGL UI      │                           │  - EN / ES i18n          │
@@ -40,8 +40,8 @@ Animal traceability system for Pilo's farm. Tracks cattle via ISO 11784/85 RFID 
 
 | Sub-project | Stack | Role |
 |---|---|---|
-| `handheld/` | ESP32-S3 · C++ · ESP-IDF · LVGL | Scans RFID tags (SC01 Plus), stores sessions, exposes data over BLE |
-| `handheld_crowpanel/` | ESP32-P4 · C++ · ESP-IDF · LVGL | Scans RFID tags (CrowPanel Advanced 5"), alternative hardware variant |
+| `handheld_crowpanel/` | ESP32-P4 · C · ESP-IDF · LVGL | **Current handheld** — scans RFID tags (CrowPanel Advanced 5"), stores sessions, audio notes, BLE sync |
+| `handheld/` | ESP32-S3 · C++ · ESP-IDF · LVGL | *Legacy handheld* (SC01 Plus) — superseded by `handheld_crowpanel/`, kept for reference |
 | `backend/` | Rust · Axum · SQLite | REST API — animals, tags, health records |
 | `frontend/` | Tauri 2 · React · TypeScript · Tailwind | Desktop app — BLE sync, animal management UI |
 
@@ -53,7 +53,22 @@ The backend is a standalone binary intentionally decoupled from Tauri so it can 
 
 ```
 pilocows/
-├── handheld/               ESP32-S3 firmware — SC01 Plus (PlatformIO)
+├── handheld_crowpanel/     ESP32-P4 firmware — CrowPanel Advanced 5" (current handheld, ESP-IDF/idf.py)
+│   ├── main/
+│   │   ├── main.c                     Entry point
+│   │   ├── screen_*.c/h               LVGL screens (scan, session list/menu/new, settings, BLE sync, audio note, ...)
+│   │   ├── rfid_driver.c              UART RFID reader
+│   │   ├── ble_gatt_server.c          GATT server
+│   │   ├── session_storage.c          SD-backed session storage
+│   │   ├── nvs_storage.c              NVS settings storage
+│   │   ├── soft_rtc.c                 RTC (DS3231 + NVS fallback)
+│   │   ├── i18n.c, strings_en.h/es.h  String tables (EN / ES)
+│   │   └── ui_manager.c               Screen navigation
+│   ├── peripheral/         Board support packages (bsp_display, bsp_audio, bsp_mic, bsp_sd, bsp_rtc, bsp_i2c, bsp_uart, bsp_stc8h1kxx)
+│   ├── sdkconfig.defaults
+│   └── README.md           Build instructions
+│
+├── handheld/               ESP32-S3 firmware — SC01 Plus (legacy, PlatformIO)
 │   ├── src/
 │   │   ├── board_config.h  Pin definitions
 │   │   ├── display/        LCD + touch driver (ST7796UI, FT6336U)
@@ -63,17 +78,6 @@ pilocows/
 │   │   ├── ui/             LVGL screens
 │   │   └── i18n/           String tables (EN / ES)
 │   └── platformio.ini
-│
-├── handheld_crowpanel/     ESP32-P4 firmware — CrowPanel Advanced (PlatformIO)
-│   ├── main/
-│   │   ├── board_config.h  Pin definitions (RGB, touch)
-│   │   ├── display/        RGB LCD driver + LVGL (display.cpp)
-│   │   ├── touch/          GT911 touch driver (touch_gt911.cpp)
-│   │   ├── main.cpp        Entry point + demo UI
-│   │   └── CMakeLists.txt
-│   ├── platformio.ini
-│   ├── sdkconfig.defaults
-│   └── README.md           Build instructions
 │
 ├── handheld_common/        Shared modules (planned Phase 2)
 │   ├── i18n/               String tables (shared)
@@ -105,6 +109,60 @@ pilocows/
 ---
 
 ## Handheld
+
+**Status**: Phase 2 (SD storage, audio notes, BLE sync in progress)
+
+The current handheld is [CrowPanel Advanced 5" ESP32-P4](https://github.com/easyteacher/CrowPanel-Advanced-5inch-ESP32-P4-HMI-AI-Display-800x480-IPS-Touch-Screen), living in `handheld_crowpanel/`. It supersedes the original SC01 Plus board — see [Handheld (Legacy — SC01 Plus)](#handheld-legacy--sc01-plus) below.
+
+### Hardware
+
+| Component | Part |
+|---|---|
+| MCU | ESP32-P4 (RISC-V dual-core, 400 MHz, 16 MB flash, 32 MB PSRAM) |
+| Connectivity | ESP32-C6-MINI-1 (WiFi/BLE via SDIO, through ESP-HOSTED) |
+| Display | RGB parallel 800×480 IPS, 16-bit RGB565, 25 MHz PCLK |
+| Touch | GT911 capacitive (5-point), I2C |
+| RFID reader | 134.2 kHz FDX-B ISO 11784/85, TTL UART (receive-only) |
+| RTC | DS3231 (I2C), falls back to NVS-persisted last-known time |
+
+### Prerequisites
+
+This project is plain **ESP-IDF** (not PlatformIO) — it uses `idf.py` directly.
+
+- [ESP-IDF v5.5](https://docs.espressif.com/projects/esp-idf/en/v5.5/esp32p4/get-started/index.html), e.g. installed under `~/esp/esp-idf`
+- USB-C cable connected to the board
+
+### Build
+
+```bash
+source ~/esp/esp-idf/export.sh    # once per shell, sets up idf.py
+cd handheld_crowpanel
+
+# Build only
+idf.py build
+
+# Build and flash (find the port with `ls /dev/cu.*` while the board is plugged in)
+idf.py -p PORT flash
+
+# Open serial monitor (115200 baud)
+idf.py -p PORT monitor
+
+# Flash and monitor in one step
+idf.py -p PORT flash monitor
+```
+
+### Project structure notes
+
+- All pin definitions live in `main/board_config.h` (see the pin tables in `CLAUDE.md`) — never hardcode GPIO numbers elsewhere.
+- Every user-visible string must go through `i18n_t(STR_...)`. Adding a string requires updating `strings_en.h`, `strings_es.h`, and the lookup table in `i18n.c`.
+- This project must keep the factory ESP-IDF project structure (proper `main/CMakeLists.txt` with `GLOB_RECURSE`, factory partition table). A minimal/custom CMakeLists or OTA partition table produces a bootloader that never starts the app.
+- Phase 2+ will extract shared code to `handheld_common/`.
+
+---
+
+## Handheld (Legacy — SC01 Plus)
+
+**Status**: Legacy — superseded by `handheld_crowpanel/`, kept for reference. Not under active development.
 
 ### Hardware
 
@@ -151,56 +209,6 @@ monitor_port = /dev/cu.usbmodemXXXX
 
 - All pin definitions live in `src/board_config.h` — never hardcode GPIO numbers elsewhere.
 - Every user-visible string must go through `i18n_t(STR_...)`. Adding a string requires updating `strings_en.h`, `strings_es.h`, and the lookup table in `i18n.cpp`.
-
----
-
-## Handheld (CrowPanel Variant)
-
-**Status**: Phase 1 MVP (Display + Touch drivers, demo UI)
-
-Alternative hardware platform using [CrowPanel Advanced 5" ESP32-P4](https://github.com/easyteacher/CrowPanel-Advanced-5inch-ESP32-P4-HMI-AI-Display-800x480-IPS-Touch-Screen).
-
-### Hardware
-
-| Component | Part |
-|---|---|
-| MCU | ESP32-P4 (RISC-V, 400 MHz, 16 MB flash, 32 MB PSRAM) |
-| Connectivity | ESP32-C6-MINI-1 (WiFi/BLE via SDIO, Phase 2+) |
-| Display | RGB parallel 800×480 IPS, 16-bit RGB565, 25 MHz PCLK |
-| Touch | GT911 capacitive, I2C |
-
-### Build
-
-```bash
-cd handheld_crowpanel
-
-# Build only
-pio run -e crowpanel
-
-# Build and flash
-pio run -e crowpanel -t upload
-
-# Open serial monitor (115200 baud)
-pio device monitor -e crowpanel
-```
-
-**Full guide**: [`README_CROWPANEL.md`](README_CROWPANEL.md)
-
-### Flash port
-
-Default is `/dev/cu.usbserial-0`. Update `platformio.ini` if different:
-
-```ini
-upload_port = /dev/cu.usbserial-0
-monitor_port = /dev/cu.usbserial-0
-```
-
-### Project structure notes
-
-- All pin definitions live in `main/board_config.h`
-- Display driver: `main/display/display.cpp` (RGB panel + LVGL)
-- Touch driver: `main/touch/touch_gt911.cpp` (GT911 I2C)
-- Phase 2+ will extract shared code to `handheld_common/`
 
 ---
 
@@ -322,14 +330,14 @@ Full spec: [`docs/ble-protocol.md`](docs/ble-protocol.md)
 
 1. **Start the backend** — `cd backend && cargo run`
 2. **Start the frontend** — `cd frontend && npm run dev` (or `npm run tauri dev` for the full app)
-3. **Flash the handheld** — `cd handheld && pio run -e sc01plus -t upload`
+3. **Flash the handheld** — `cd handheld_crowpanel && source ~/esp/esp-idf/export.sh && idf.py -p PORT flash` (legacy SC01 Plus: `cd handheld && pio run -e sc01plus -t upload`)
 4. Use the frontend's **Sync** tab to connect to the handheld over BLE and import scan sessions.
 
 ---
 
 ## Build pipeline (Makefile)
 
-A root-level `Makefile` covers building, flashing, versioning, and releasing all three sub-projects.
+A root-level `Makefile` covers building, flashing, versioning, and releasing the backend, frontend, and the **legacy** `handheld/` (SC01 Plus) firmware. `handheld_crowpanel/` isn't wired into the Makefile yet — build/flash it directly with `idf.py` as shown above.
 
 ### Prerequisites
 
