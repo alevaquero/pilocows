@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { animalsApi, BREEDS, CATEGORIES, type Animal } from '../api/animals'
+import { animalsApi, BREEDS, CATEGORIES, breedLabel, type Animal } from '../api/animals'
 import { tagsApi, type Tag } from '../api/tags'
 import Modal, { Field, inputCls } from '../components/Modal'
 
@@ -72,7 +72,7 @@ function RegisterAnimalModal({ onClose, onCreated }: { onClose: () => void; onCr
       <div className="grid grid-cols-2 gap-3">
         <Field label={t('animals.breed')}>
           <select className={inputCls} value={breed} onChange={e => setBreed(e.target.value)}>
-            {BREEDS.map(b => <option key={b} value={b}>{b}</option>)}
+            {BREEDS.map(b => <option key={b} value={b}>{breedLabel(t, b)}</option>)}
           </select>
         </Field>
         <Field label={t('animals.category')}>
@@ -262,7 +262,7 @@ export default function AnimalsPage() {
                 <th className="px-3 py-2">
                   <select className={filterCls} value={filters.breed} onChange={set('breed')}>
                     <option value="">—</option>
-                    {BREEDS.map(b => <option key={b} value={b}>{b}</option>)}
+                    {BREEDS.map(b => <option key={b} value={b}>{breedLabel(t, b)}</option>)}
                   </select>
                 </th>
                 <th className="px-3 py-2">
@@ -302,7 +302,7 @@ export default function AnimalsPage() {
                   onClick={() => navigate(`/animals/${a.id}`)}
                 >
                   <td className="px-4 py-3 font-mono text-slate-800">{a.tag_number}</td>
-                  <td className="px-4 py-3 text-slate-600">{a.breed}</td>
+                  <td className="px-4 py-3 text-slate-600">{breedLabel(t, a.breed)}</td>
                   <td className="px-4 py-3 text-slate-600">{t(`animals.${a.category}`)}</td>
                   <td className="px-4 py-3 text-slate-600">{t(`animals.${a.sex}`)}</td>
                   <td className="px-4 py-3">

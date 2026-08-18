@@ -28,6 +28,8 @@
     "register": "Register Animal",
     "tag": "Tag",
     "breed": "Breed",
+    "breed_angus_red": "Angus Red",
+    "breed_angus_black": "Angus Black",
     "category": "Category",
     "sex": "Sex",
     "dob": "Date of Birth",

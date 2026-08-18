@@ -77,8 +77,23 @@ export const animalsApi = {
 }
 
 export const BREEDS = [
-  'Angus', 'Shorthorn', 'Hereford', 'Holando Argentino',
+  'Angus Red', 'Angus Black', 'Shorthorn', 'Hereford', 'Holando Argentino',
   'Brangus', 'Brahman', 'Charolais', 'Limangus', 'Crossbred', 'Other',
 ]
+
+// Breed values are stored and matched on as-is (English) and normally just
+// displayed literally in both languages (e.g. "Holando Argentino",
+// "Shorthorn"). A couple of breeds have a genuinely different Spanish name,
+// so those route through i18n for display; everything else falls straight
+// through unchanged. The stored/matched value never changes with locale.
+const BREED_I18N_KEYS: Record<string, string> = {
+  'Angus Red': 'animals.breed_angus_red',
+  'Angus Black': 'animals.breed_angus_black',
+}
+
+export function breedLabel(t: (key: string) => string, breed: string): string {
+  const key = BREED_I18N_KEYS[breed]
+  return key ? t(key) : breed
+}
 
 export const CATEGORIES = ['bull', 'cow', 'heifer', 'steer', 'male_calf', 'female_calf']

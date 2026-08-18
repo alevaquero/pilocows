@@ -11,7 +11,7 @@ import {
   formatEventData,
 } from '../api/sessions'
 import { BASE } from '../api/client'
-import { animalsApi, BREEDS, CATEGORIES } from '../api/animals'
+import { animalsApi, BREEDS, CATEGORIES, breedLabel } from '../api/animals'
 import { tagsApi, type Tag } from '../api/tags'
 import Modal, { Field, inputCls } from '../components/Modal'
 import AudioPlayButton from '../components/AudioPlayButton'
@@ -153,7 +153,7 @@ function RegisterAnimalModal({
       <div className="grid grid-cols-2 gap-3">
         <Field label={t('animals.breed')}>
           <select className={inputCls} value={breed} onChange={e => setBreed(e.target.value)}>
-            {BREEDS.map(b => <option key={b} value={b}>{b}</option>)}
+            {BREEDS.map(b => <option key={b} value={b}>{breedLabel(t, b)}</option>)}
           </select>
         </Field>
         <Field label={t('animals.category')}>

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { reportsApi, type HerdRow } from '../../api/reports'
-import { CATEGORIES } from '../../api/animals'
+import { CATEGORIES, breedLabel } from '../../api/animals'
 import PrintButton from '../../components/PrintButton'
 
 const REASON_CLS: Record<string, string> = {
@@ -113,7 +113,7 @@ export default function RemovalsReport() {
                 >
                   <td className="px-4 py-3 font-mono text-slate-800">{row.tag_number}</td>
                   <td className="px-4 py-3 text-slate-600">{t(`animals.${row.category}`)}</td>
-                  <td className="px-4 py-3 text-slate-600">{row.breed || '—'}</td>
+                  <td className="px-4 py-3 text-slate-600">{row.breed ? breedLabel(t, row.breed) : '—'}</td>
                   <td className="px-4 py-3">
                     {row.removal_reason ? (
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${REASON_CLS[row.removal_reason] ?? REASON_CLS.other}`}>

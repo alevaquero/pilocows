@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { reportsApi, type HerdRow } from '../../api/reports'
-import { CATEGORIES } from '../../api/animals'
+import { CATEGORIES, breedLabel } from '../../api/animals'
 import PrintButton from '../../components/PrintButton'
 
 function TestBadge({ result }: { result: string }) {
@@ -75,7 +75,7 @@ export default function HerdStatusReport() {
             className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white text-slate-700"
           >
             <option value="">{t('reports.herd.breed_all')}</option>
-            {availableBreeds.map(b => <option key={b} value={b}>{b}</option>)}
+            {availableBreeds.map(b => <option key={b} value={b}>{breedLabel(t, b)}</option>)}
           </select>
         )}
         <select

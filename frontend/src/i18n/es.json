@@ -28,6 +28,8 @@
     "register": "Registrar animal",
     "tag": "Caravana",
     "breed": "Raza",
+    "breed_angus_red": "Angus Colorado",
+    "breed_angus_black": "Angus Negro",
     "category": "Categoria",
     "sex": "Sexo",
     "dob": "Fecha de nacimiento",

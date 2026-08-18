@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { animalsApi, type AnimalProfile, BREEDS, CATEGORIES } from '../api/animals'
+import { animalsApi, type AnimalProfile, BREEDS, CATEGORIES, breedLabel } from '../api/animals'
 import {
   healthApi,
   PREGNANCY_RESULTS, TB_RESULTS, REMOVAL_REASONS, COMMON_VACCINES,
@@ -583,7 +583,7 @@ export default function AnimalDetailPage() {
           <div>
             <h2 className="text-2xl font-bold font-mono text-slate-800 select-text cursor-text mb-1">{profile.tag_number}</h2>
             <p className="text-slate-500 select-text cursor-text">
-              {profile.breed} · {t(`animals.${profile.category}`)} · {t(`animals.${profile.sex}`)}{profile.dob ? ` · ${profile.dob}` : ''}
+              {breedLabel(t, profile.breed)} · {t(`animals.${profile.category}`)} · {t(`animals.${profile.sex}`)}{profile.dob ? ` · ${profile.dob}` : ''}
             </p>
             {profile.notes && <p className="text-sm text-slate-400 mt-1 select-text cursor-text">{profile.notes}</p>}
           </div>
