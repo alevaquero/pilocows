@@ -84,14 +84,70 @@ static void clock_tick_cb(lv_timer_t *t) {
     lv_label_set_text(s_lbl_clock, buf);
 }
 
-// Battery level -> icon glyph. Thresholds are ours (the STC8 only reports a
-// raw 0-100 percentage); no documented breakpoints exist to match instead.
+// Battery level -> icon glyph. Thresholds are ours; input is our own
+// voltage-derived percentage (see battery_percent_from_voltage below), not
+// the STC8's own gauge.
 static const char *battery_icon_for_level(uint8_t level) {
     if (level >= 85) return LV_SYMBOL_BATTERY_FULL;
     if (level >= 60) return LV_SYMBOL_BATTERY_3;
     if (level >= 35) return LV_SYMBOL_BATTERY_2;
     if (level >= 12) return LV_SYMBOL_BATTERY_1;
     return LV_SYMBOL_BATTERY_EMPTY;
+}
+
+// info.bat_level (the STC8H1KXX's own onboard gauge) is unreliable: it reads
+// ~10-15% high while charging (charge current raises the cell's terminal
+// voltage above its true resting voltage via internal-resistance IR drop),
+// and has been observed pinned at 100% for extended periods near empty —
+// consistent with an unsigned-underflow-then-clamp bug in whatever formula
+// runs on that chip. We can't see or patch that firmware from here, so we
+// ignore bat_level entirely and compute our own percentage from bat_voltage
+// (already converted from the raw ADC divider on the STC8 side) via a
+// single-cell Li-ion/LiPo open-circuit-voltage curve. bat_state is still
+// trusted for the charging icon/color — it's a simple flag, not a computed
+// value, and far less likely to share the same bug.
+typedef struct { uint16_t mv; uint8_t pct; } bat_curve_point_t;
+
+static const bat_curve_point_t BAT_DISCHARGE_CURVE[] = {
+    {3300,   0},
+    {3500,  10},
+    {3600,  20},
+    {3650,  30},
+    {3700,  40},
+    {3750,  50},
+    {3800,  60},
+    {3850,  70},
+    {3950,  80},
+    {4050,  90},
+    {4200, 100},
+};
+#define BAT_CURVE_POINTS (sizeof(BAT_DISCHARGE_CURVE) / sizeof(BAT_DISCHARGE_CURVE[0]))
+
+// Fixed heuristic offset subtracted from bat_voltage while charging, to
+// roughly cancel the IR-drop voltage bump before mapping through the
+// (resting-voltage) discharge curve above. We don't have a charge-current
+// reading to compute the true drop, so this is a rough approximation only —
+// retune once we've logged charge-vs-rest voltage pairs at the same true
+// state of charge (see the ESP_LOGI below, which prints both the vendor
+// bat_level and our computed percentage for comparison).
+#define BAT_CHARGE_IR_COMPENSATION_MV 90
+
+static uint8_t battery_percent_from_voltage(uint32_t mv, bool charging) {
+    if (charging) {
+        mv = (mv > BAT_CHARGE_IR_COMPENSATION_MV) ? mv - BAT_CHARGE_IR_COMPENSATION_MV : 0;
+    }
+    if (mv <= BAT_DISCHARGE_CURVE[0].mv) return BAT_DISCHARGE_CURVE[0].pct;
+    if (mv >= BAT_DISCHARGE_CURVE[BAT_CURVE_POINTS - 1].mv) return BAT_DISCHARGE_CURVE[BAT_CURVE_POINTS - 1].pct;
+    for (size_t i = 1; i < BAT_CURVE_POINTS; i++) {
+        if (mv <= BAT_DISCHARGE_CURVE[i].mv) {
+            const bat_curve_point_t *lo = &BAT_DISCHARGE_CURVE[i - 1];
+            const bat_curve_point_t *hi = &BAT_DISCHARGE_CURVE[i];
+            uint32_t span_mv = hi->mv - lo->mv;
+            uint32_t span_pct = hi->pct - lo->pct;
+            return (uint8_t)(lo->pct + (uint32_t)(mv - lo->mv) * span_pct / span_mv);
+        }
+    }
+    return 100; // unreachable — top of table is caught above
 }
 
 // The STC8's charge-state enum (IDLE/CHARGING/FULLY_CHARGED/NO_CHARGE/ERROR)
@@ -132,10 +188,9 @@ static void battery_tick_cb(lv_timer_t *t) {
         return;
     }
 
-    ESP_LOGI(TAG, "battery: adc=%" PRIu32 "mV bat=%" PRIu32 "mV level=%u%% state=%u",
-             info.adc_voltage, info.bat_voltage, info.bat_level, info.bat_state);
-
     if (info.bat_voltage < BAT_VOLTAGE_MIN_MV || info.bat_voltage > BAT_VOLTAGE_MAX_MV) {
+        ESP_LOGI(TAG, "battery: adc=%" PRIu32 "mV bat=%" PRIu32 "mV vendor_level=%u%% state=%u (out of range)",
+                 info.adc_voltage, info.bat_voltage, info.bat_level, info.bat_state);
         lv_obj_set_style_text_color(s_lbl_battery, lv_palette_main(LV_PALETTE_GREY), LV_PART_MAIN);
         lv_label_set_text(s_lbl_battery, LV_SYMBOL_BATTERY_EMPTY " N/A");
         lv_timer_set_period(t, now < s_burst_until_us ? BATTERY_POLL_BURST_MS : BATTERY_POLL_BASE_MS);
@@ -143,7 +198,15 @@ static void battery_tick_cb(lv_timer_t *t) {
     }
 
     bool charging = (info.bat_state == BAT_CHARGE_CHARGING || info.bat_state == BAT_CHARGE_FULLY_CHARGED);
-    const char *icon = battery_icon_for_level(info.bat_level);
+    // Fully-charged is a discrete flag from the STC8, not a voltage estimate
+    // — trust it directly rather than running it back through the curve.
+    uint8_t percent = (info.bat_state == BAT_CHARGE_FULLY_CHARGED)
+                           ? 100
+                           : battery_percent_from_voltage(info.bat_voltage, charging);
+    const char *icon = battery_icon_for_level(percent);
+
+    ESP_LOGI(TAG, "battery: adc=%" PRIu32 "mV bat=%" PRIu32 "mV vendor_level=%u%% our_pct=%u%% state=%u",
+             info.adc_voltage, info.bat_voltage, info.bat_level, percent, info.bat_state);
 
     if (s_have_last_charging && charging != s_last_charging) {
         ESP_LOGI(TAG, "battery: charge state changed (charging=%d) - burst polling for %dms",
@@ -157,7 +220,7 @@ static void battery_tick_cb(lv_timer_t *t) {
     lv_color_t color;
     if (charging) {
         color = lv_palette_main(LV_PALETTE_GREEN);
-    } else if (info.bat_level < 15) {
+    } else if (percent < 15) {
         color = lv_palette_main(LV_PALETTE_RED);
     } else {
         color = lv_color_white();
@@ -165,9 +228,9 @@ static void battery_tick_cb(lv_timer_t *t) {
     lv_obj_set_style_text_color(s_lbl_battery, color, LV_PART_MAIN);
 
     if (charging) {
-        lv_label_set_text_fmt(s_lbl_battery, "%s %s %d%%", LV_SYMBOL_CHARGE, icon, info.bat_level);
+        lv_label_set_text_fmt(s_lbl_battery, "%s %s %d%%", LV_SYMBOL_CHARGE, icon, percent);
     } else {
-        lv_label_set_text_fmt(s_lbl_battery, "%s %d%%", icon, info.bat_level);
+        lv_label_set_text_fmt(s_lbl_battery, "%s %d%%", icon, percent);
     }
 }
 
