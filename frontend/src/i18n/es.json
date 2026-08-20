@@ -245,7 +245,8 @@
       "check_from": "Control desde",
       "check_to": "Control hasta",
       "due_from": "Parto desde",
-      "due_to": "Parto hasta"
+      "due_to": "Parto hasta",
+      "result_breakdown": "Desglose de Resultados"
     },
     "weights": {
       "title": "Progreso de Peso",

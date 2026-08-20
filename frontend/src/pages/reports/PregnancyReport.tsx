@@ -5,8 +5,23 @@ import { reportsApi, type HerdRow, daysUntil } from '../../api/reports'
 import { CATEGORIES } from '../../api/animals'
 import PrintButton from '../../components/PrintButton'
 import ExportCsvButton from '../../components/ExportCsvButton'
+import DonutChart from '../../components/DonutChart'
 
 const PREGNANT_RESULTS = ['small_pregnant', 'medium_pregnant', 'big_pregnant']
+const PREGNANCY_RESULTS = ['not_pregnant', 'unknown', 'small_pregnant', 'medium_pregnant', 'big_pregnant', 'rejected']
+
+// Fixed per-category color — the order matches the dataviz skill's
+// CVD-validated categorical order (palette.md, adjacent pairlist) and never
+// changes with the current filter, so a given result always gets the same
+// color regardless of which categories are present.
+const RESULT_COLORS: Record<string, string> = {
+  not_pregnant:    '#2a78d6', // blue
+  unknown:         '#eb6834', // orange
+  small_pregnant:  '#1baf7a', // aqua
+  medium_pregnant: '#eda100', // yellow
+  big_pregnant:    '#e87ba4', // magenta
+  rejected:        '#008300', // green
+}
 
 export default function PregnancyReport() {
   const { t } = useTranslation()
@@ -47,7 +62,12 @@ export default function PregnancyReport() {
       return da - db
     })
 
-  const PREGNANCY_RESULTS = ['not_pregnant', 'unknown', 'small_pregnant', 'medium_pregnant', 'big_pregnant', 'rejected']
+  const resultCounts = PREGNANCY_RESULTS.map(key => ({
+    key,
+    label: t(`pregnancy.${key}`),
+    value: rows.filter(r => r.last_pregnancy_result === key).length,
+    color: RESULT_COLORS[key],
+  }))
 
   return (
     <div className="p-8">
@@ -137,6 +157,13 @@ export default function PregnancyReport() {
       ) : rows.length === 0 ? (
         <p className="text-slate-500 text-sm">{t('reports.pregnancies.no_data')}</p>
       ) : (
+        <>
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 mb-4">
+          <h3 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-4">
+            {t('reports.pregnancies.result_breakdown')}
+          </h3>
+          <DonutChart segments={resultCounts} total={rows.length} />
+        </div>
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead>
@@ -182,6 +209,7 @@ export default function PregnancyReport() {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   )

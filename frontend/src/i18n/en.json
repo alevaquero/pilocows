@@ -245,7 +245,8 @@
       "check_from": "Check from",
       "check_to": "Check to",
       "due_from": "Due from",
-      "due_to": "Due to"
+      "due_to": "Due to",
+      "result_breakdown": "Result Breakdown"
     },
     "weights": {
       "title": "Weight Progress",
