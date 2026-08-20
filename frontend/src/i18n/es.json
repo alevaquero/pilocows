@@ -248,6 +248,18 @@
       "due_to": "Parto hasta",
       "result_breakdown": "Desglose de Resultados"
     },
+    "tests": {
+      "title": "Informe de Pruebas",
+      "desc": "Último resultado de prueba por animal activo.",
+      "test_name": "Nombre de la prueba",
+      "result": "Resultado",
+      "date": "Fecha de prueba",
+      "no_data": "No hay registros de pruebas.",
+      "result_all": "Todos los resultados",
+      "date_from": "Fecha desde",
+      "date_to": "Fecha hasta",
+      "result_breakdown": "Desglose de Resultados"
+    },
     "weights": {
       "title": "Progreso de Peso",
       "desc": "Peso actual y variación respecto al pesaje anterior.",

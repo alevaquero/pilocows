@@ -248,6 +248,18 @@
       "due_to": "Due to",
       "result_breakdown": "Result Breakdown"
     },
+    "tests": {
+      "title": "Test Report",
+      "desc": "Most recent test result per active animal.",
+      "test_name": "Test Name",
+      "result": "Result",
+      "date": "Test Date",
+      "no_data": "No test records.",
+      "result_all": "All results",
+      "date_from": "Date from",
+      "date_to": "Date to",
+      "result_breakdown": "Result Breakdown"
+    },
     "weights": {
       "title": "Weight Progress",
       "desc": "Latest weight and gain/loss since previous weighing.",
