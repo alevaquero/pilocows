@@ -335,6 +335,11 @@ pub struct HerdReportRow {
     pub sex: String,
     pub dob: Option<String>,
     pub is_active: i64,
+    // Lineage
+    pub father_id: Option<i64>,
+    pub mother_id: Option<i64>,
+    pub father_tag_number: Option<String>,
+    pub mother_tag_number: Option<String>,
     // Weight
     pub last_weight_kg: Option<f64>,
     pub last_weighed_at: Option<String>,

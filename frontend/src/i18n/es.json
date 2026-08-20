@@ -266,6 +266,20 @@
       "date_to": "Fecha hasta",
       "result_breakdown": "Desglose de Resultados"
     },
+    "lineage": {
+      "title": "Informe de Ascendencia",
+      "desc": "Ascendencia (padre/madre) y completitud de los registros.",
+      "no_data": "No se encontraron animales.",
+      "completeness": "Ascendencia",
+      "completeness_all": "Todos",
+      "completeness_both": "Ambos conocidos",
+      "completeness_missing": "Falta uno o ambos",
+      "completeness_breakdown": "Completitud de Ascendencia",
+      "both_known": "Ambos Conocidos",
+      "father_only": "Solo Padre",
+      "mother_only": "Solo Madre",
+      "neither_known": "Ninguno Conocido"
+    },
     "weights": {
       "title": "Progreso de Peso",
       "desc": "Peso actual y variación respecto al pesaje anterior.",

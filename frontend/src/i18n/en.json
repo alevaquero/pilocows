@@ -266,6 +266,20 @@
       "date_to": "Date to",
       "result_breakdown": "Result Breakdown"
     },
+    "lineage": {
+      "title": "Lineage Report",
+      "desc": "Father/mother lineage and record-keeping completeness.",
+      "no_data": "No animals found.",
+      "completeness": "Parentage",
+      "completeness_all": "All",
+      "completeness_both": "Both known",
+      "completeness_missing": "Missing one or both",
+      "completeness_breakdown": "Parentage Completeness",
+      "both_known": "Both Known",
+      "father_only": "Father Only",
+      "mother_only": "Mother Only",
+      "neither_known": "Neither Known"
+    },
     "weights": {
       "title": "Weight Progress",
       "desc": "Latest weight and gain/loss since previous weighing.",

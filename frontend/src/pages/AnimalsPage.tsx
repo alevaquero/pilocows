@@ -264,6 +264,8 @@ export default function AnimalsPage() {
                 <SortTh col="tag_number" sort={sort} onSort={toggleSort}>EID</SortTh>
                 <SortTh col="breed"      sort={sort} onSort={toggleSort}>{t('animals.breed')}</SortTh>
                 <SortTh col="category"   sort={sort} onSort={toggleSort}>{t('animals.category')}</SortTh>
+                <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('animals.father')}</th>
+                <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('animals.mother')}</th>
                 <SortTh col="sex"        sort={sort} onSort={toggleSort}>{t('animals.sex')}</SortTh>
                 <SortTh col="is_active"  sort={sort} onSort={toggleSort}>{t('animals.status')}</SortTh>
                 <SortTh col="notes"      sort={sort} onSort={toggleSort}>{t('animals.notes')}</SortTh>
@@ -286,6 +288,7 @@ export default function AnimalsPage() {
                     {CATEGORIES.map(c => <option key={c} value={c}>{t(`animals.${c}`)}</option>)}
                   </select>
                 </th>
+                <th /><th />
                 <th className="px-3 py-2">
                   <select className={filterCls} value={filters.sex} onChange={set('sex')}>
                     <option value="">—</option>
@@ -306,7 +309,7 @@ export default function AnimalsPage() {
             <tbody>
               {visible.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-6 text-sm text-slate-400 text-center">
+                  <td colSpan={8} className="px-4 py-6 text-sm text-slate-400 text-center">
                     {t('animals.no_animals')}
                   </td>
                 </tr>
@@ -319,6 +322,8 @@ export default function AnimalsPage() {
                   <td className="px-4 py-3 font-mono text-slate-800">{a.tag_number}</td>
                   <td className="px-4 py-3 text-slate-600">{breedLabel(t, a.breed)}</td>
                   <td className="px-4 py-3 text-slate-600">{t(`animals.${a.category}`)}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500">{a.father_tag_number ?? <span className="text-slate-300 font-sans">—</span>}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500">{a.mother_tag_number ?? <span className="text-slate-300 font-sans">—</span>}</td>
                   <td className="px-4 py-3 text-slate-600">{t(`animals.${a.sex}`)}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${

@@ -61,7 +61,8 @@ export default function HerdStatusReport() {
           <ExportCsvButton
             baseName="herd_status"
             headers={[
-              'EID', t('animals.category'), t('reports.herd.weight'), t('reports.herd.change'),
+              'EID', t('animals.category'), t('animals.father'), t('animals.mother'),
+              t('reports.herd.weight'), t('reports.herd.change'),
               t('reports.herd.pregnancy'), t('reports.herd.last_test'), t('reports.herd.next_vacc'),
             ]}
             rows={rows.map(row => {
@@ -76,6 +77,8 @@ export default function HerdStatusReport() {
               return [
                 row.tag_number,
                 t(`animals.${row.category}`),
+                row.father_tag_number ?? '',
+                row.mother_tag_number ?? '',
                 row.last_weight_kg ?? '',
                 gain ?? '',
                 row.last_pregnancy_result ? t(`pregnancy.${row.last_pregnancy_result}`) : '',
@@ -132,6 +135,8 @@ export default function HerdStatusReport() {
               <tr className="border-b border-slate-100 bg-slate-50">
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">EID</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('animals.category')}</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('animals.father')}</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('animals.mother')}</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('reports.herd.weight')}</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('reports.herd.change')}</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{t('reports.herd.pregnancy')}</th>
@@ -152,6 +157,8 @@ export default function HerdStatusReport() {
                   >
                     <td className="px-4 py-3 font-mono text-slate-800">{row.tag_number}</td>
                     <td className="px-4 py-3 text-slate-600">{t(`animals.${row.category}`)}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{row.father_tag_number ?? <span className="text-slate-300 font-sans">—</span>}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{row.mother_tag_number ?? <span className="text-slate-300 font-sans">—</span>}</td>
                     <td className="px-4 py-3 text-slate-700">
                       {row.last_weight_kg != null ? `${row.last_weight_kg} kg` : <span className="text-slate-300">—</span>}
                     </td>

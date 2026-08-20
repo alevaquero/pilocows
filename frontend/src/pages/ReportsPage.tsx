@@ -13,6 +13,7 @@ const REPORTS: ReportCard[] = [
   { path: '/reports/vaccinations', titleKey: 'reports.vaccinations.title', descKey: 'reports.vaccinations.desc', color: 'bg-amber-50 border-amber-200 text-amber-700' },
   { path: '/reports/pregnancies',  titleKey: 'reports.pregnancies.title',  descKey: 'reports.pregnancies.desc',  color: 'bg-pink-50 border-pink-200 text-pink-700' },
   { path: '/reports/tests',        titleKey: 'reports.tests.title',        descKey: 'reports.tests.desc',        color: 'bg-purple-50 border-purple-200 text-purple-700' },
+  { path: '/reports/lineage',      titleKey: 'reports.lineage.title',      descKey: 'reports.lineage.desc',      color: 'bg-indigo-50 border-indigo-200 text-indigo-700' },
   { path: '/reports/weights',      titleKey: 'reports.weights.title',      descKey: 'reports.weights.desc',      color: 'bg-green-50 border-green-200 text-green-700' },
   { path: '/reports/removals',     titleKey: 'reports.removals.title',     descKey: 'reports.removals.desc',     color: 'bg-slate-50 border-slate-200 text-slate-700' },
 ]

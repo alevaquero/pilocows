@@ -8,6 +8,11 @@ export interface HerdRow {
   sex: string
   dob: string | null
   is_active: number
+  // Lineage
+  father_id: number | null
+  mother_id: number | null
+  father_tag_number: string | null
+  mother_tag_number: string | null
   // Weight
   last_weight_kg: number | null
   last_weighed_at: string | null

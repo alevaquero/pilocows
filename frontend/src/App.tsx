@@ -13,6 +13,7 @@ import HerdStatusReport from './pages/reports/HerdStatusReport'
 import VaccinationCalendarReport from './pages/reports/VaccinationCalendarReport'
 import PregnancyReport from './pages/reports/PregnancyReport'
 import TestReport from './pages/reports/TestReport'
+import LineageReport from './pages/reports/LineageReport'
 import WeightProgressReport from './pages/reports/WeightProgressReport'
 import RemovalsReport from './pages/reports/RemovalsReport'
 import SplashScreen from './components/SplashScreen'
@@ -39,6 +40,7 @@ export default function App() {
             <Route path="reports/vaccinations" element={<VaccinationCalendarReport />} />
             <Route path="reports/pregnancies" element={<PregnancyReport />} />
             <Route path="reports/tests" element={<TestReport />} />
+            <Route path="reports/lineage" element={<LineageReport />} />
             <Route path="reports/weights" element={<WeightProgressReport />} />
             <Route path="reports/removals" element={<RemovalsReport />} />
           </Route>
