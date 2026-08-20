@@ -95,9 +95,12 @@ function RegisterAnimalModal({
   const [category, setCategory] = useState(CATEGORIES[0])
   const [sex, setSex] = useState('female')
   const [dob, setDob] = useState('')
+  const [fatherEid, setFatherEid] = useState('')
+  const [motherEid, setMotherEid] = useState('')
   const [notes, setNotes] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [animalEids, setAnimalEids] = useState<string[]>([])
 
   useEffect(() => {
     tagsApi.list(true).then(ts => {
@@ -107,6 +110,7 @@ function RegisterAnimalModal({
       if (match) setTagId(String(match.id))
       else if (ts.length > 0) setTagId(String(ts[0].id))
     })
+    animalsApi.list().then(all => setAnimalEids(all.map(a => a.tag_number)))
   }, [eid])
 
   const submit = async () => {
@@ -117,6 +121,8 @@ function RegisterAnimalModal({
         tag_id: Number(tagId),
         breed, category, sex,
         dob: dob || undefined,
+        father_eid: fatherEid || undefined,
+        mother_eid: motherEid || undefined,
         notes,
       })
       onCreated()
@@ -174,6 +180,15 @@ function RegisterAnimalModal({
         <Field label={t('animals.dob')}>
           <input type="date" className={inputCls} value={dob} onChange={e => setDob(e.target.value)} />
         </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label={t('animals.father_eid')}>
+          <input list="animal-eids" className={inputCls} value={fatherEid} onChange={e => setFatherEid(e.target.value)} placeholder={t('animals.parent_placeholder')} />
+        </Field>
+        <Field label={t('animals.mother_eid')}>
+          <input list="animal-eids" className={inputCls} value={motherEid} onChange={e => setMotherEid(e.target.value)} placeholder={t('animals.parent_placeholder')} />
+        </Field>
+        <datalist id="animal-eids">{animalEids.map(a => <option key={a} value={a} />)}</datalist>
       </div>
       <Field label={t('animals.notes')}>
         <textarea className={inputCls} rows={2} value={notes} onChange={e => setNotes(e.target.value)} />

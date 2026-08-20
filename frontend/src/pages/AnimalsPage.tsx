@@ -15,15 +15,19 @@ function RegisterAnimalModal({ onClose, onCreated }: { onClose: () => void; onCr
   const [category, setCategory] = useState(CATEGORIES[0])
   const [sex, setSex] = useState('female')
   const [dob, setDob] = useState('')
+  const [fatherEid, setFatherEid] = useState('')
+  const [motherEid, setMotherEid] = useState('')
   const [notes, setNotes] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [animalEids, setAnimalEids] = useState<string[]>([])
 
   useEffect(() => {
     tagsApi.list(true).then(t => {
       setTags(t)
       if (t.length > 0) setTagId(String(t[0].id))
     })
+    animalsApi.list().then(all => setAnimalEids(all.map(a => a.tag_number)))
   }, [])
 
   const submit = async () => {
@@ -34,6 +38,8 @@ function RegisterAnimalModal({ onClose, onCreated }: { onClose: () => void; onCr
         tag_id: Number(tagId),
         breed, category, sex,
         dob: dob || undefined,
+        father_eid: fatherEid || undefined,
+        mother_eid: motherEid || undefined,
         notes,
       })
       onCreated(created)
@@ -91,6 +97,15 @@ function RegisterAnimalModal({ onClose, onCreated }: { onClose: () => void; onCr
         <Field label={t('animals.dob')}>
           <input type="date" className={inputCls} value={dob} onChange={e => setDob(e.target.value)} />
         </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label={t('animals.father_eid')}>
+          <input list="animal-eids" className={inputCls} value={fatherEid} onChange={e => setFatherEid(e.target.value)} placeholder={t('animals.parent_placeholder')} />
+        </Field>
+        <Field label={t('animals.mother_eid')}>
+          <input list="animal-eids" className={inputCls} value={motherEid} onChange={e => setMotherEid(e.target.value)} placeholder={t('animals.parent_placeholder')} />
+        </Field>
+        <datalist id="animal-eids">{animalEids.map(eid => <option key={eid} value={eid} />)}</datalist>
       </div>
       <Field label={t('animals.notes')}>
         <textarea className={inputCls} rows={2} value={notes} onChange={e => setNotes(e.target.value)} />

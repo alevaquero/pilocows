@@ -9,21 +9,59 @@ use crate::{
     db,
     error::{AppError, Result},
     models::{
-        Animal, AnimalProfile, AnimalQuery, AnimalWithTag, CreateAnimal, GeneralScan, PatchAnimal,
+        AnimalProfile, AnimalQuery, AnimalWithTag, CreateAnimal, GeneralScan, PatchAnimal,
         Pregnancy, Removal, Test, Vaccination, Weight,
     },
 };
+
+// Shared by list/get/create/patch so every response shape is consistent —
+// includes the father/mother EID resolved via a self-join, not just their
+// internal ids.
+const ANIMAL_WITH_TAG_SELECT: &str = "
+    SELECT a.*, t.tag_number,
+           ft.tag_number AS father_tag_number,
+           mt.tag_number AS mother_tag_number
+    FROM animals a
+    JOIN tags t ON t.id = a.tag_id
+    LEFT JOIN animals fa ON fa.id = a.father_id
+    LEFT JOIN tags ft ON ft.id = fa.tag_id
+    LEFT JOIN animals ma ON ma.id = a.mother_id
+    LEFT JOIN tags mt ON mt.id = ma.tag_id";
+
+async fn fetch_animal_with_tag(pool: &SqlitePool, id: i64) -> Result<AnimalWithTag> {
+    let sql = format!("{ANIMAL_WITH_TAG_SELECT} WHERE a.id = ?");
+    sqlx::query_as::<_, AnimalWithTag>(&sql)
+        .bind(id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(AppError::NotFound)
+}
+
+// Resolves a father_eid/mother_eid input to an animal id.
+// Trimmed-empty (or omitted upstream) means "no parent" -> Ok(None).
+// A non-empty EID must match an already-registered animal (i.e. a tag with
+// an animals row, not just an inventory tag) or this errors.
+async fn resolve_parent_eid(pool: &SqlitePool, eid: Option<&str>) -> Result<Option<i64>> {
+    let eid = match eid.map(str::trim) {
+        Some(e) if !e.is_empty() => e,
+        _ => return Ok(None),
+    };
+    let id: Option<i64> = sqlx::query_scalar(
+        "SELECT a.id FROM animals a JOIN tags t ON t.id = a.tag_id WHERE t.tag_number = ?",
+    )
+    .bind(eid)
+    .fetch_optional(pool)
+    .await?;
+    id.map(Some)
+        .ok_or_else(|| AppError::BadRequest(format!("no registered animal with EID '{eid}'")))
+}
 
 pub async fn list_animals(
     State(pool): State<SqlitePool>,
     Query(q): Query<AnimalQuery>,
 ) -> Result<Json<Vec<AnimalWithTag>>> {
     // Build query dynamically based on filters
-    let mut sql = String::from(
-        "SELECT a.*, t.tag_number FROM animals a
-         JOIN tags t ON t.id = a.tag_id
-         WHERE 1=1",
-    );
+    let mut sql = format!("{ANIMAL_WITH_TAG_SELECT} WHERE 1=1");
     let mut binds: Vec<String> = Vec::new();
 
     if let Some(ref tn) = q.tag_number {
@@ -52,15 +90,7 @@ pub async fn get_animal(
     State(pool): State<SqlitePool>,
     Path(id): Path<i64>,
 ) -> Result<Json<AnimalProfile>> {
-    let animal = sqlx::query_as::<_, AnimalWithTag>(
-        "SELECT a.*, t.tag_number FROM animals a
-         JOIN tags t ON t.id = a.tag_id
-         WHERE a.id = ?",
-    )
-    .bind(id)
-    .fetch_optional(&pool)
-    .await?
-    .ok_or(AppError::NotFound)?;
+    let animal = fetch_animal_with_tag(&pool, id).await?;
 
     // Each of these LEFT JOINs back onto session_records via the
     // (session_id, eid) link fan_out_session_record() stamps on rows it
@@ -152,6 +182,9 @@ pub async fn create_animal(
         return Err(AppError::BadRequest("tag_id does not exist".into()));
     }
 
+    let father_id = resolve_parent_eid(&pool, body.father_eid.as_deref()).await?;
+    let mother_id = resolve_parent_eid(&pool, body.mother_eid.as_deref()).await?;
+
     // Resolve tag_number before the insert so we can backfill scan_events after
     let tag_number: String =
         sqlx::query_scalar("SELECT tag_number FROM tags WHERE id = ?")
@@ -159,10 +192,10 @@ pub async fn create_animal(
             .fetch_one(&pool)
             .await?;
 
-    let animal = sqlx::query_as::<_, Animal>(
-        "INSERT INTO animals (tag_id, breed, category, sex, dob, notes)
-         VALUES (?, ?, ?, ?, ?, ?)
-         RETURNING *",
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO animals (tag_id, breed, category, sex, dob, notes, father_id, mother_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         RETURNING id",
     )
     .bind(body.tag_id)
     .bind(&body.breed)
@@ -170,32 +203,23 @@ pub async fn create_animal(
     .bind(&body.sex)
     .bind(body.dob.as_deref())
     .bind(&body.notes)
+    .bind(father_id)
+    .bind(mother_id)
     .fetch_one(&pool)
     .await?;
 
     // Link any scan_events that arrived before this animal was registered and
     // fan them out into the typed health tables (weights, vaccinations, etc.)
-    db::backfill_scan_events(&pool, animal.id, &tag_number).await?;
+    db::backfill_scan_events(&pool, id, &tag_number).await?;
     // Same, for the newer session-based sync path (session_records) — see
     // backfill_session_records' doc comment for why this is also needed.
-    db::backfill_session_records(&pool, animal.id, &tag_number).await?;
+    db::backfill_session_records(&pool, id, &tag_number).await?;
 
-    // Respond with the tag_number joined in (like list/get_animal already
-    // do) — the plain Animal row alone left the frontend's list showing a
-    // blank EID for the newly-registered animal until it reloaded the page.
-    let animal = AnimalWithTag {
-        id: animal.id,
-        tag_id: animal.tag_id,
-        tag_number,
-        breed: animal.breed,
-        category: animal.category,
-        sex: animal.sex,
-        dob: animal.dob,
-        notes: animal.notes,
-        is_active: animal.is_active,
-        created_at: animal.created_at,
-        updated_at: animal.updated_at,
-    };
+    // Re-fetch through the joined select (like list/get_animal already use)
+    // rather than hand-building the response — the plain inserted row alone
+    // left the frontend's list showing a blank EID/parent EID until the
+    // next reload.
+    let animal = fetch_animal_with_tag(&pool, id).await?;
 
     Ok((StatusCode::CREATED, Json(animal)))
 }
@@ -222,13 +246,9 @@ pub async fn patch_animal(
     State(pool): State<SqlitePool>,
     Path(id): Path<i64>,
     Json(body): Json<PatchAnimal>,
-) -> Result<Json<Animal>> {
+) -> Result<Json<AnimalWithTag>> {
     // Check animal exists
-    let existing = sqlx::query_as::<_, Animal>("SELECT * FROM animals WHERE id = ?")
-        .bind(id)
-        .fetch_optional(&pool)
-        .await?
-        .ok_or(AppError::NotFound)?;
+    let existing = fetch_animal_with_tag(&pool, id).await?;
 
     let breed = body.breed.unwrap_or(existing.breed);
     let category = body.category.unwrap_or(existing.category);
@@ -240,13 +260,26 @@ pub async fn patch_animal(
         .map(|v| if v { 1i64 } else { 0i64 })
         .unwrap_or(existing.is_active);
 
-    let animal = sqlx::query_as::<_, Animal>(
+    // None = field omitted, leave unchanged; Some(eid) = re-resolve
+    // (Some("") clears it — resolve_parent_eid maps empty to None).
+    let father_id = match body.father_eid {
+        Some(eid) => resolve_parent_eid(&pool, Some(&eid)).await?,
+        None => existing.father_id,
+    };
+    let mother_id = match body.mother_eid {
+        Some(eid) => resolve_parent_eid(&pool, Some(&eid)).await?,
+        None => existing.mother_id,
+    };
+    if father_id == Some(id) || mother_id == Some(id) {
+        return Err(AppError::BadRequest("an animal cannot be its own parent".into()));
+    }
+
+    sqlx::query(
         "UPDATE animals
          SET breed = ?, category = ?, sex = ?, dob = ?, notes = ?,
-             is_active = ?,
+             is_active = ?, father_id = ?, mother_id = ?,
              updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-         WHERE id = ?
-         RETURNING *",
+         WHERE id = ?",
     )
     .bind(&breed)
     .bind(&category)
@@ -254,9 +287,12 @@ pub async fn patch_animal(
     .bind(dob.as_deref())
     .bind(&notes)
     .bind(is_active)
+    .bind(father_id)
+    .bind(mother_id)
     .bind(id)
-    .fetch_one(&pool)
+    .execute(&pool)
     .await?;
 
+    let animal = fetch_animal_with_tag(&pool, id).await?;
     Ok(Json(animal))
 }

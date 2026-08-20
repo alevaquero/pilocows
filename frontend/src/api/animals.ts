@@ -11,6 +11,10 @@ export interface Animal {
   dob: string | null
   notes: string
   is_active: number
+  father_id: number | null
+  mother_id: number | null
+  father_tag_number: string | null
+  mother_tag_number: string | null
   created_at: string
   updated_at: string
 }
@@ -42,6 +46,8 @@ export interface CreateAnimalPayload {
   sex: string
   dob?: string
   notes?: string
+  father_eid?: string
+  mother_eid?: string
 }
 
 export interface PatchAnimalPayload {
@@ -51,6 +57,9 @@ export interface PatchAnimalPayload {
   dob?: string
   notes?: string
   is_active?: boolean
+  // Omit to leave unchanged, "" to clear, or an existing animal's EID to set.
+  father_eid?: string
+  mother_eid?: string
 }
 
 export interface AnimalQuery {

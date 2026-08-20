@@ -105,15 +105,27 @@ function EditAnimalModal({ profile, onClose, onSaved }: {
   const [category, setCategory] = useState(profile.category)
   const [sex, setSex] = useState(profile.sex)
   const [dob, setDob] = useState(profile.dob ?? '')
+  const [fatherEid, setFatherEid] = useState(profile.father_tag_number ?? '')
+  const [motherEid, setMotherEid] = useState(profile.mother_tag_number ?? '')
   const [notes, setNotes] = useState(profile.notes)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [animalEids, setAnimalEids] = useState<string[]>([])
+
+  useEffect(() => {
+    // Exclude this animal's own EID — it can't be its own parent.
+    animalsApi.list().then(all =>
+      setAnimalEids(all.filter(a => a.id !== profile.id).map(a => a.tag_number)))
+  }, [profile.id])
 
   const submit = async () => {
     setSaving(true)
     try {
+      // father_eid/mother_eid always sent (even "") so clearing one back to
+      // unknown actually round-trips — see PatchAnimalPayload's doc comment.
       const updated = await animalsApi.patch(profile.id, {
         breed, category, sex, dob: dob || undefined, notes,
+        father_eid: fatherEid, mother_eid: motherEid,
       })
       onSaved({ ...profile, ...updated })
       onClose()
@@ -150,6 +162,15 @@ function EditAnimalModal({ profile, onClose, onSaved }: {
         <Field label={t('animals.dob')}>
           <input type="date" className={inputCls} value={dob} onChange={e => setDob(e.target.value)} />
         </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label={t('animals.father_eid')}>
+          <input list="animal-eids" className={inputCls} value={fatherEid} onChange={e => setFatherEid(e.target.value)} placeholder={t('animals.parent_placeholder')} />
+        </Field>
+        <Field label={t('animals.mother_eid')}>
+          <input list="animal-eids" className={inputCls} value={motherEid} onChange={e => setMotherEid(e.target.value)} placeholder={t('animals.parent_placeholder')} />
+        </Field>
+        <datalist id="animal-eids">{animalEids.map(a => <option key={a} value={a} />)}</datalist>
       </div>
       <Field label={t('animals.notes')}>
         <textarea className={inputCls} rows={2} value={notes} onChange={e => setNotes(e.target.value)} />
@@ -585,6 +606,17 @@ export default function AnimalDetailPage() {
             <p className="text-slate-500 select-text cursor-text">
               {breedLabel(t, profile.breed)} · {t(`animals.${profile.category}`)} · {t(`animals.${profile.sex}`)}{profile.dob ? ` · ${profile.dob}` : ''}
             </p>
+            {(profile.father_id || profile.mother_id) && (
+              <p className="text-sm text-slate-400 mt-1">
+                {profile.father_id ? (
+                  <>{t('animals.father')}: <button onClick={() => navigate(`/animals/${profile.father_id}`)} className="font-mono text-slate-500 hover:text-slate-800 hover:underline">{profile.father_tag_number}</button></>
+                ) : null}
+                {profile.father_id && profile.mother_id ? ' · ' : ''}
+                {profile.mother_id ? (
+                  <>{t('animals.mother')}: <button onClick={() => navigate(`/animals/${profile.mother_id}`)} className="font-mono text-slate-500 hover:text-slate-800 hover:underline">{profile.mother_tag_number}</button></>
+                ) : null}
+              </p>
+            )}
             {profile.notes && <p className="text-sm text-slate-400 mt-1 select-text cursor-text">{profile.notes}</p>}
           </div>
           <div className="flex items-center gap-2">

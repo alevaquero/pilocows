@@ -36,20 +36,6 @@ pub struct CreateTag {
 // ─── Animals ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, FromRow)]
-pub struct Animal {
-    pub id: i64,
-    pub tag_id: i64,
-    pub breed: String,
-    pub category: String,
-    pub sex: String,
-    pub dob: Option<String>,
-    pub notes: String,
-    pub is_active: i64,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-#[derive(Debug, Serialize, FromRow)]
 pub struct AnimalWithTag {
     pub id: i64,
     pub tag_id: i64,
@@ -60,6 +46,15 @@ pub struct AnimalWithTag {
     pub dob: Option<String>,
     pub notes: String,
     pub is_active: i64,
+    pub father_id: Option<i64>,
+    pub mother_id: Option<i64>,
+    // EID of the father/mother, resolved via a self-join — lets the
+    // frontend show the parent's tag number without a second round-trip.
+    // None both when the parent is unset and when it's set but that animal
+    // has since been deleted (ON DELETE SET NULL already cleared father_id
+    // in that case, so the two are indistinguishable here, which is fine).
+    pub father_tag_number: Option<String>,
+    pub mother_tag_number: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -73,6 +68,12 @@ pub struct CreateAnimal {
     pub dob: Option<String>,
     #[serde(default)]
     pub notes: String,
+    // EID of an existing animal, or empty/omitted for "unknown". Resolved
+    // to father_id/mother_id server-side — see resolve_parent_eid.
+    #[serde(default)]
+    pub father_eid: Option<String>,
+    #[serde(default)]
+    pub mother_eid: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -83,6 +84,9 @@ pub struct PatchAnimal {
     pub dob: Option<String>,
     pub notes: Option<String>,
     pub is_active: Option<bool>,
+    // None = leave unchanged; Some("") = clear; Some(eid) = look up + set.
+    pub father_eid: Option<String>,
+    pub mother_eid: Option<String>,
 }
 
 // ─── Vaccinations ─────────────────────────────────────────────────────────────
