@@ -15,6 +15,8 @@ import { animalsApi, BREEDS, CATEGORIES, breedLabel } from '../api/animals'
 import { tagsApi, type Tag } from '../api/tags'
 import Modal, { Field, inputCls } from '../components/Modal'
 import AudioPlayButton from '../components/AudioPlayButton'
+import PrintButton from '../components/PrintButton'
+import ExportCsvButton from '../components/ExportCsvButton'
 
 // ── Register Tag modal (used when clicking an EID not in the tag inventory) ───
 
@@ -273,6 +275,13 @@ function DeleteConfirmModal({ onClose, onConfirm }: { onClose: () => void; onCon
   )
 }
 
+// CSV export filename base — falls back to the session id when unnamed, and
+// strips anything that isn't safe across filesystems from the session name.
+function sessionCsvBaseName(session: SessionDetail): string {
+  const base = session.name?.trim() || `session_${session.id}`
+  return base.replace(/[^\w-]+/g, '_')
+}
+
 // ── Sort / filter types ───────────────────────────────────────────────────────
 
 type ColKey = 'eid' | 'registered' | 'scanned_at' | 'event_summary' | 'note'
@@ -481,7 +490,7 @@ export default function SessionDetailPage() {
       {/* Back link */}
       <button
         onClick={() => navigate('/sessions')}
-        className="text-xs text-slate-400 hover:text-slate-700 mb-5 block"
+        className="print:hidden text-xs text-slate-400 hover:text-slate-700 mb-5 block"
       >
         ← {t('sessions.title')}
       </button>
@@ -499,15 +508,27 @@ export default function SessionDetailPage() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <ExportCsvButton
+            baseName={sessionCsvBaseName(session)}
+            headers={[t('sessions.col_eid'), t('sessions.col_registered'), t('sessions.col_time'), t('sessions.col_data'), t('sessions.col_note')]}
+            rows={visible.map(r => [
+              r.eid,
+              r.animal_id != null ? t('sessions.registered') : r.tag_registered ? t('sessions.tag_only') : t('sessions.unknown_animal'),
+              new Date(r.scanned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              formatEventData(r.event_data, session.session_type, t),
+              r.note,
+            ])}
+          />
+          <PrintButton />
           <button
             onClick={() => setShowEdit(true)}
-            className="px-3 py-1.5 text-xs rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+            className="print:hidden px-3 py-1.5 text-xs rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
           >
             {t('sessions.edit_session')}
           </button>
           <button
             onClick={() => setShowDelete(true)}
-            className="px-3 py-1.5 text-xs rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
+            className="print:hidden px-3 py-1.5 text-xs rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
           >
             {t('sessions.delete_session')}
           </button>
@@ -547,7 +568,7 @@ export default function SessionDetailPage() {
         {filters.eid && (
           <button
             onClick={() => setFilters(EMPTY_FILTERS)}
-            className="text-xs text-slate-500 hover:text-slate-800 underline"
+            className="print:hidden text-xs text-slate-500 hover:text-slate-800 underline"
           >
             {t('animals.clear_filters')}
           </button>
@@ -567,7 +588,7 @@ export default function SessionDetailPage() {
                 <SortTh col="event_summary" sort={sort} onSort={toggleSort}>{t('sessions.col_data')}</SortTh>
                 <SortTh col="note"          sort={sort} onSort={toggleSort}>{t('sessions.col_note')}</SortTh>
               </tr>
-              <tr className="border-b border-slate-200 bg-slate-50">
+              <tr className="print:hidden border-b border-slate-200 bg-slate-50">
                 <th className="px-3 py-2">
                   <input className={filterCls} value={filters.eid}
                     onChange={e => setFilters(f => ({ ...f, eid: e.target.value }))}

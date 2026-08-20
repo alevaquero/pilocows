@@ -20,7 +20,7 @@ export default function AudioPlayButton({ src, onRowClick }: { src: string; onRo
     <>
       <button
         onClick={toggle}
-        className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 shrink-0"
+        className="print:hidden inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 shrink-0"
         title={playing ? 'Pause' : 'Play'}
       >
         {playing ? '⏸' : '▶'}
