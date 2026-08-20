@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { reportsApi, type HerdRow } from '../../api/reports'
 import { CATEGORIES, breedLabel } from '../../api/animals'
 import PrintButton from '../../components/PrintButton'
+import ExportCsvButton from '../../components/ExportCsvButton'
 
 const REASON_CLS: Record<string, string> = {
   sold:        'bg-amber-100 text-amber-700',
@@ -48,7 +49,20 @@ export default function RemovalsReport() {
           ← {t('reports.title')}
         </button>
         <h2 className="text-xl font-semibold text-slate-800">{t('reports.removals.title')}</h2>
-        <PrintButton className="ml-auto" />
+        <div className="ml-auto flex items-center gap-2">
+          <ExportCsvButton
+            baseName="removals_report"
+            headers={['EID', t('animals.category'), t('animals.breed'), t('reports.removals.reason'), t('reports.removals.date')]}
+            rows={rows.map(row => [
+              row.tag_number,
+              t(`animals.${row.category}`),
+              row.breed ? breedLabel(t, row.breed) : '',
+              row.removal_reason ? t(`removal.${row.removal_reason}`) : '',
+              row.removal_date ?? '',
+            ])}
+          />
+          <PrintButton />
+        </div>
       </div>
 
       <div className="print:hidden flex flex-wrap items-center gap-3 mb-6">

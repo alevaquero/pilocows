@@ -3,6 +3,7 @@ use crate::AppState;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::Serialize;
 use tauri::{Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 use tokio::time::{timeout, Duration};
 
 /// Emitted to the frontend as the "audio-progress" event while a note/tag
@@ -17,7 +18,7 @@ struct AudioProgressPayload {
 }
 
 // ---------------------------------------------------------------------------
-// File save (backup download)
+// File save (backup download, CSV report export)
 // ---------------------------------------------------------------------------
 
 /// Open the system print dialog for the main window.
@@ -26,10 +27,12 @@ pub fn print_window(window: tauri::WebviewWindow) -> Result<(), String> {
     window.print().map_err(|e| e.to_string())
 }
 
-/// Save raw bytes to the user's Downloads folder.
+/// Save raw bytes straight to the user's Downloads folder, no prompt.
+/// Used for the DB backup download, where a fixed, predictable location is
+/// preferable to asking every time.
 /// Returns the absolute path where the file was written.
 #[tauri::command]
-pub async fn save_backup(
+pub async fn save_file_to_downloads(
     app: tauri::AppHandle,
     filename: String,
     data: Vec<u8>,
@@ -38,6 +41,33 @@ pub async fn save_backup(
     let save_path = download_dir.join(&filename);
     std::fs::write(&save_path, &data).map_err(|e| e.to_string())?;
     Ok(save_path.to_string_lossy().to_string())
+}
+
+/// Opens a native "Save As" dialog pre-filled with `filename`, then writes
+/// the bytes wherever the user picks. Used for CSV report exports, where —
+/// unlike the backup download — the user should get to choose the
+/// destination each time.
+/// Returns the saved path, or `None` if the user cancelled the dialog.
+#[tauri::command]
+pub async fn export_csv(
+    app: tauri::AppHandle,
+    filename: String,
+    data: Vec<u8>,
+) -> Result<Option<String>, String> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_file_name(&filename)
+        .add_filter("CSV", &["csv"])
+        .blocking_save_file();
+
+    let Some(picked) = picked else {
+        return Ok(None); // user cancelled
+    };
+
+    let path = picked.into_path().map_err(|e| e.to_string())?;
+    std::fs::write(&path, &data).map_err(|e| e.to_string())?;
+    Ok(Some(path.to_string_lossy().to_string()))
 }
 
 // ---------------------------------------------------------------------------

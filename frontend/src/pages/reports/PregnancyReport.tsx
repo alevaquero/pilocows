@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { reportsApi, type HerdRow, daysUntil } from '../../api/reports'
 import { CATEGORIES } from '../../api/animals'
 import PrintButton from '../../components/PrintButton'
+import ExportCsvButton from '../../components/ExportCsvButton'
 
 const PREGNANT_RESULTS = ['small_pregnant', 'medium_pregnant', 'big_pregnant']
 
@@ -55,7 +56,24 @@ export default function PregnancyReport() {
           ← {t('reports.title')}
         </button>
         <h2 className="text-xl font-semibold text-slate-800">{t('reports.pregnancies.title')}</h2>
-        <PrintButton className="ml-auto" />
+        <div className="ml-auto flex items-center gap-2">
+          <ExportCsvButton
+            baseName="pregnancy_report"
+            headers={['EID', t('animals.category'), t('reports.pregnancies.result'), t('reports.pregnancies.checked'), t('reports.pregnancies.due'), t('reports.pregnancies.days')]}
+            rows={rows.map(row => {
+              const days = row.last_pregnancy_due_date ? daysUntil(row.last_pregnancy_due_date) : null
+              return [
+                row.tag_number,
+                t(`animals.${row.category}`),
+                t(`pregnancy.${row.last_pregnancy_result}`),
+                row.last_pregnancy_checked_at ?? '',
+                row.last_pregnancy_due_date ?? '',
+                days ?? '',
+              ]
+            })}
+          />
+          <PrintButton />
+        </div>
       </div>
 
       <div className="print:hidden flex flex-wrap items-center gap-3 mb-6">

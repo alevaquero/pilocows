@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { reportsApi, type HerdRow } from '../../api/reports'
 import { CATEGORIES } from '../../api/animals'
 import PrintButton from '../../components/PrintButton'
+import ExportCsvButton from '../../components/ExportCsvButton'
 
 type GainFilter = '' | 'gained' | 'lost'
 type SortKey = 'weight_desc' | 'weight_asc' | 'gain_desc' | 'gain_asc'
@@ -61,7 +62,26 @@ export default function WeightProgressReport() {
           ← {t('reports.title')}
         </button>
         <h2 className="text-xl font-semibold text-slate-800">{t('reports.weights.title')}</h2>
-        <PrintButton className="ml-auto" />
+        <div className="ml-auto flex items-center gap-2">
+          <ExportCsvButton
+            baseName="weight_progress"
+            headers={['EID', t('animals.category'), t('reports.weights.current'), t('reports.weights.change'), t('reports.weights.previous'), t('reports.weights.date')]}
+            rows={rows.map(row => {
+              const gain = row.prev_weight_kg != null
+                ? +(row.last_weight_kg! - row.prev_weight_kg).toFixed(1)
+                : null
+              return [
+                row.tag_number,
+                t(`animals.${row.category}`),
+                row.last_weight_kg ?? '',
+                gain ?? '',
+                row.prev_weight_kg ?? '',
+                row.last_weighed_at ?? '',
+              ]
+            })}
+          />
+          <PrintButton />
+        </div>
       </div>
 
       <div className="print:hidden flex flex-wrap items-center gap-3 mb-6">

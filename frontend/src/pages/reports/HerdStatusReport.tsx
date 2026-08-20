@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { reportsApi, type HerdRow } from '../../api/reports'
 import { CATEGORIES, breedLabel } from '../../api/animals'
 import PrintButton from '../../components/PrintButton'
+import ExportCsvButton from '../../components/ExportCsvButton'
 
 function TestBadge({ result }: { result: string }) {
   const { t } = useTranslation()
@@ -56,7 +57,35 @@ export default function HerdStatusReport() {
           ← {t('reports.title')}
         </button>
         <h2 className="text-xl font-semibold text-slate-800">{t('reports.herd.title')}</h2>
-        <PrintButton className="ml-auto" />
+        <div className="ml-auto flex items-center gap-2">
+          <ExportCsvButton
+            baseName="herd_status"
+            headers={[
+              'EID', t('animals.category'), t('reports.herd.weight'), t('reports.herd.change'),
+              t('reports.herd.pregnancy'), t('reports.herd.last_test'), t('reports.herd.next_vacc'),
+            ]}
+            rows={rows.map(row => {
+              const gain = row.last_weight_kg != null && row.prev_weight_kg != null
+                ? +(row.last_weight_kg - row.prev_weight_kg).toFixed(1)
+                : null
+              const nextVacc = row.overdue_count > 0
+                ? `${row.overdue_count} ${t('reports.herd.overdue')}`
+                : row.next_vaccine_due_at
+                  ? `${row.next_vaccine} · ${row.next_vaccine_due_at}`
+                  : ''
+              return [
+                row.tag_number,
+                t(`animals.${row.category}`),
+                row.last_weight_kg ?? '',
+                gain ?? '',
+                row.last_pregnancy_result ? t(`pregnancy.${row.last_pregnancy_result}`) : '',
+                row.last_test_result ? `${t(`test.${row.last_test_result}`)}${row.last_test_name ? ` (${row.last_test_name})` : ''}` : '',
+                nextVacc,
+              ]
+            })}
+          />
+          <PrintButton />
+        </div>
       </div>
 
       <div className="print:hidden flex flex-wrap items-center gap-3 mb-6">

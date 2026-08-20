@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { reportsApi, type HerdRow, daysUntil } from '../../api/reports'
 import { CATEGORIES } from '../../api/animals'
 import PrintButton from '../../components/PrintButton'
+import ExportCsvButton from '../../components/ExportCsvButton'
 
 type VaccStatus = 'overdue' | 'soon' | 'upcoming'
 
@@ -65,7 +66,23 @@ export default function VaccinationCalendarReport() {
           ← {t('reports.title')}
         </button>
         <h2 className="text-xl font-semibold text-slate-800">{t('reports.vaccinations.title')}</h2>
-        <PrintButton className="ml-auto" />
+        <div className="ml-auto flex items-center gap-2">
+          <ExportCsvButton
+            baseName="vaccination_calendar"
+            headers={['EID', t('animals.category'), t('reports.vaccinations.vaccine'), t('reports.vaccinations.due'), t('reports.vaccinations.status')]}
+            rows={rows.map(row => {
+              const status = row.next_vaccine_due_at ? vaccStatus(row.next_vaccine_due_at) : 'overdue'
+              return [
+                row.tag_number,
+                t(`animals.${row.category}`),
+                row.next_vaccine ?? (row.overdue_count > 0 ? `${row.overdue_count} venc.` : ''),
+                row.next_vaccine_due_at ?? '',
+                t(`reports.vaccinations.status_${status}`),
+              ]
+            })}
+          />
+          <PrintButton />
+        </div>
       </div>
 
       <div className="print:hidden flex flex-wrap items-center gap-3 mb-6">

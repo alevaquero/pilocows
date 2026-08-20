@@ -44,7 +44,7 @@ export default function SettingsPage() {
     setBacking(true)
     try {
       const { filename, data } = await backupApi.fetch()
-      const savedPath = await invoke<string>('save_backup', { filename, data })
+      const savedPath = await invoke<string>('save_file_to_downloads', { filename, data })
       setBackupSavedPath(savedPath)
     } catch (e) {
       setBackupError(e instanceof Error ? e.message : String(e))

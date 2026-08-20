@@ -61,6 +61,7 @@ fn start_backend_sidecar() -> Option<std::process::Child> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState::new())
         .setup(|app| {
             let version = app.package_info().version.to_string();
@@ -91,7 +92,8 @@ pub fn run() {
             commands::ble_delete_session,
             commands::ble_disconnect,
             commands::ble_check_connection,
-            commands::save_backup,
+            commands::save_file_to_downloads,
+            commands::export_csv,
             commands::print_window,
         ])
         .build(tauri::generate_context!())
